@@ -93,6 +93,22 @@ def _add_common(p: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Disable automatic skill matching from the prompt",
     )
+    p.add_argument(
+        "--web",
+        action="store_true",
+        help="Enable fetch_url / web_search tools",
+    )
+    p.add_argument(
+        "--no-spawn",
+        action="store_true",
+        help="Disable spawn_task sub-investigations",
+    )
+    p.add_argument(
+        "--api-backend",
+        default=None,
+        choices=["chat_completions", "messages"],
+        help="chat_completions (OpenAI) or messages (Anthropic)",
+    )
     p.add_argument("-C", "--cwd", default=None, help="Working directory")
     p.add_argument("-q", "--quiet", action="store_true", help="Less tool logging")
 
@@ -171,6 +187,9 @@ def _make_config(args: argparse.Namespace):
         stream=False if getattr(args, "no_stream", False) else None,
         allow_outside=True if getattr(args, "allow_outside", False) else None,
         auto_skill=False if getattr(args, "no_auto_skill", False) else None,
+        enable_web=True if getattr(args, "web", False) else None,
+        enable_spawn=False if getattr(args, "no_spawn", False) else None,
+        api_backend=getattr(args, "api_backend", None),
         cwd=cwd,
     )
 
@@ -447,7 +466,11 @@ def _cmd_doctor(console: Console, args: argparse.Namespace) -> None:
         console.print("api_key:     [red]NOT SET[/]")
     console.print(f"base_url:    {cfg.base_url}")
     console.print(f"model:       {cfg.model}")
-    console.print(f"sandbox:     {cfg.sandbox}  yolo={cfg.yolo}  stream={cfg.stream}")
+    console.print(
+        f"sandbox:     {cfg.sandbox}  yolo={cfg.yolo}  stream={cfg.stream}  "
+        f"web={cfg.enable_web}  spawn={cfg.enable_spawn}"
+    )
+    console.print(f"api_backend: {cfg.api_backend}")
     amd = agents_md_path()
     console.print(f"AGENTS.md:   {amd} ({'ok' if amd.is_file() else 'missing'})")
     console.print(f"skills:      {skills_dir()} ({len(load_skills())} found)")
@@ -508,12 +531,21 @@ model = "gpt-4o"
 # max_messages = 80
 # max_retries = 4
 # auto_skill = true       # match /commit /fix … from natural language
+# enable_web = false      # fetch_url + web_search (or XP_WEB=1 / --web)
+# enable_spawn = true     # spawn_task read-only sub-agents
+# api_backend = "chat_completions"  # or "messages" for Anthropic
 # skills_paths = ["~/my-skills"]
 
 # xAI:
 # base_url = "https://api.x.ai/v1"
 # model = "grok-3-mini"
 # (set XAI_API_KEY)
+
+# Anthropic:
+# api_backend = "messages"
+# base_url = "https://api.anthropic.com"
+# model = "claude-sonnet-4-20250514"
+# (set ANTHROPIC_API_KEY)
 
 # OpenAI-compatible proxy:
 # base_url = "https://your-proxy.example/v1"

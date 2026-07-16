@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0
+
+- Optional web tools: `fetch_url`, `web_search` (`enable_web` / `--web` / `XP_WEB=1`)
+- `spawn_task` read-only sub-investigation (fresh context, summary back)
+- Anthropic Messages backend (`api_backend = "messages"`, `ANTHROPIC_API_KEY`)
+- New skills: `/review`, `/test`, `/refactor`, `/release`
+- Dual-mode docs: standalone vs Grok layer
+
 ## 0.4.0
 
 - `apply_patch` tool (freeform *** Patch and unified diffs)

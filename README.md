@@ -7,7 +7,7 @@
 - **可以不装 Grok** — 配置 API Key 即可  
 - **也可以挂 Grok Build** — 同一套 skills / AGENTS.md 用 `install.sh` 装进 `~/.grok`
 
-当前版本 **0.4**：流式 / 会话 / 沙箱 / 重试，以及 **彩色 diff**、**apply_patch**、**skill 自动匹配**。
+当前版本 **0.5**：**web 工具**、**spawn_task**、**Anthropic 后端**、更多 skills，以及 0.4 的 diff / 自动 skill / 会话能力。
 
 ---
 
@@ -62,6 +62,9 @@ model = "gpt-4o"
 | `XP_YOLO=1` | 关闭沙箱 / 拦截 / 确认 |
 | `XP_NO_STREAM=1` | 关闭流式 |
 | `XP_ALLOW_OUTSIDE=1` | 允许写 cwd 外 |
+| `XP_WEB=1` | 启用 web 工具 |
+| `XP_API_BACKEND` | `chat_completions` 或 `messages` |
+| `ANTHROPIC_API_KEY` | Anthropic（自动切 messages 后端） |
 | `XP_SESSIONS_DIR` | 会话存储目录 |
 
 仅设 `XAI_API_KEY` 时自动使用 `https://api.x.ai/v1`。
@@ -84,12 +87,16 @@ xp run --no-auto-skill "…"      # 关闭自动 skill
 xp run --json "列出 3 个文件"    # 机器可读
 
 xp -m gpt-4o --no-stream "…"
+xp --web "查一下官方文档并总结"  # 启用 fetch_url / web_search
 xp --yolo "…"                   # 危险模式
 xp skills
 ```
 
-**内置工具：** `bash` · `read_file` · `write_file` · `str_replace` · **`apply_patch`** · `list_dir` · `grep`  
-写文件时会打印 **彩色 unified diff** 预览。
+**内置工具：**  
+`bash` · `read_file` · `write_file` · `str_replace` · `apply_patch` · `list_dir` · `grep` · **`spawn_task`**  
+可选 web：`fetch_url` · `web_search`（`--web` / `enable_web=true`）  
+
+写文件时打印 **彩色 unified diff**。`spawn_task` 会在只读子上下文里调查后回传摘要。
 
 **安全默认：**
 
@@ -120,8 +127,25 @@ xp skills
 | `/pr` | 创建/更新 GitHub PR |
 | `/fix` | 复现 → 定位 → 修复 → 验证 |
 | `/ship` | 实现 → 验证 → 提交 |
+| `/review` | 代码审查 |
+| `/test` | 补测试 |
+| `/refactor` | 行为不变的重构 |
+| `/release` | 发版准备（changelog / 版本） |
 
-chat 里可直接输入 `/commit`、`/skills`。
+chat 里可直接输入 `/commit`、`/skills`。自然语言也会 **自动匹配** skill。
+
+### Anthropic
+
+```toml
+api_backend = "messages"
+base_url = "https://api.anthropic.com"
+model = "claude-sonnet-4-20250514"
+```
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+xp -m claude-sonnet-4-20250514 --api-backend messages "…"
+```
 
 ---
 

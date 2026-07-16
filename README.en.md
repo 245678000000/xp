@@ -7,7 +7,7 @@
 - **No Grok required** — set an API key and run  
 - **Optional Grok Build layer** — same skills via `./install.sh` → `~/.grok`
 
-**v0.4:** streaming, sessions, sandbox, retries, **colored diffs**, **apply_patch**, **auto skill match**.
+**v0.5:** web tools, spawn_task, Anthropic backend, more skills (+ v0.4 features).
 
 ## Install
 
@@ -42,8 +42,9 @@ xp run --no-auto-skill "…"
 xp skills
 ```
 
-Tools: `bash`, `read_file`, `write_file`, `str_replace`, **`apply_patch`**, `list_dir`, `grep`.  
-Mutating file tools print a **colored unified diff**. Default sandbox: cwd-only.
+Tools: `bash`, files, **`apply_patch`**, **`spawn_task`**, optional **`fetch_url`/`web_search`** (`--web`).  
+Skills: commit, pr, fix, ship, review, test, refactor, release.  
+Anthropic: `api_backend=messages` + `ANTHROPIC_API_KEY`.
 
 ## Dev
 

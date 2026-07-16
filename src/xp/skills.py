@@ -124,6 +124,10 @@ _ALIASES: dict[str, tuple[str, ...]] = {
     "pr": ("pull request", "开 pr", "创建 pr", "github pr", "合并请求"),
     "fix": ("bug", "fix", "修复", "stack trace", "报错", "failure", "crash", "flaky"),
     "ship": ("ship", "交付", "implement and commit", "做完并提交", "end-to-end"),
+    "review": ("code review", "审查", "review this", "review the pr", "评审"),
+    "test": ("write tests", "补测试", "unit test", "pytest", "add tests"),
+    "refactor": ("refactor", "重构", "cleanup", "simplify code"),
+    "release": ("release", "发版", "changelog", "tag version", "cut a release"),
 }
 
 

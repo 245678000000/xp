@@ -34,15 +34,40 @@ def build_system_prompt(
     agent: str | None = None,
     system_extra: str = "",
     cwd: Path | None = None,
+    enable_web: bool = False,
+    enable_spawn: bool = True,
+    read_only: bool = False,
 ) -> str:
     parts: list[str] = []
 
+    tools = ["bash", "read_file", "list_dir", "grep"]
+    if not read_only:
+        tools = [
+            "bash",
+            "read_file",
+            "write_file",
+            "str_replace",
+            "apply_patch",
+            "list_dir",
+            "grep",
+        ]
+        if enable_spawn:
+            tools.append("spawn_task")
+    if enable_web:
+        tools.extend(["fetch_url", "web_search"])
+
     parts.append(
-        "You are **xp**, a terminal coding agent with tools "
-        "(bash, read_file, write_file, str_replace, list_dir, grep).\n"
+        "You are **xp**, a terminal coding agent with tools: "
+        + ", ".join(tools)
+        + ".\n"
         "Work carefully. Prefer evidence over guessing. "
-        "Use tools when you need filesystem or shell access.\n"
-        "When the task is done, give a concise final answer without more tool calls."
+        "Prefer apply_patch / str_replace over full-file rewrites. "
+        + (
+            "You are in **read-only** mode — do not modify files.\n"
+            if read_only
+            else "Use spawn_task for short read-only sub-investigations.\n"
+        )
+        + "When the task is done, give a concise final answer without more tool calls."
     )
 
     global_md = agents_md_path()

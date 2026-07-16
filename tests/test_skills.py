@@ -6,7 +6,7 @@ from xp.skills import get_skill, load_skills, _parse_frontmatter
 def test_load_bundled_skills():
     skills = load_skills()
     names = {s.name for s in skills}
-    assert {"commit", "pr", "fix", "ship"} <= names
+    assert {"commit", "pr", "fix", "ship", "review", "test", "refactor", "release"} <= names
 
 
 def test_get_skill_commit():

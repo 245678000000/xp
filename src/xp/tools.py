@@ -162,6 +162,82 @@ TOOL_DEFS: list[dict[str, Any]] = [
     },
 ]
 
+WEB_TOOL_DEFS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "fetch_url",
+            "description": "Fetch a public http(s) URL and return text content (HTML stripped).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string"},
+                    "max_chars": {"type": "integer", "description": "Max characters (default 20000)"},
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "web_search",
+            "description": "Search the public web (DuckDuckGo, no API key). Returns titles, URLs, snippets.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "max_results": {"type": "integer", "description": "1-10, default 5"},
+                },
+                "required": ["query"],
+            },
+        },
+    },
+]
+
+SPAWN_TOOL_DEF: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": "spawn_task",
+        "description": (
+            "Run a short read-only sub-investigation in a fresh context "
+            "(list/read/grep/bash read-only). Returns a summary. Use for parallel research."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "goal": {"type": "string", "description": "What to investigate"},
+                "max_turns": {"type": "integer", "description": "Max tool loop turns (default 6)"},
+            },
+            "required": ["goal"],
+        },
+    },
+}
+
+READ_ONLY_TOOL_NAMES = frozenset({"bash", "read_file", "list_dir", "grep", "fetch_url", "web_search"})
+
+
+def get_tool_defs(
+    *,
+    enable_web: bool = False,
+    enable_spawn: bool = True,
+    read_only: bool = False,
+) -> list[dict[str, Any]]:
+    if read_only:
+        names = {"bash", "read_file", "list_dir", "grep"}
+        if enable_web:
+            names |= {"fetch_url", "web_search"}
+        defs = [t for t in TOOL_DEFS if t["function"]["name"] in names]
+        if enable_web:
+            defs = defs + WEB_TOOL_DEFS
+        return defs
+    defs = list(TOOL_DEFS)
+    if enable_web:
+        defs = defs + WEB_TOOL_DEFS
+    if enable_spawn:
+        defs = defs + [SPAWN_TOOL_DEF]
+    return defs
+
 
 class ToolRuntime:
     def __init__(
@@ -172,12 +248,18 @@ class ToolRuntime:
         sandbox: bool = True,
         confirm_risky: bool = True,
         confirm_fn: Optional[Callable[[str], bool]] = None,
+        enable_web: bool = False,
+        spawn_task_fn: Optional[Callable[..., str]] = None,
+        read_only: bool = False,
     ) -> None:
         self.cwd = cwd.resolve()
         self.yolo = yolo
         self.sandbox = sandbox and not yolo
         self.confirm_risky = confirm_risky and not yolo
         self.confirm_fn = confirm_fn
+        self.enable_web = enable_web
+        self.spawn_task_fn = spawn_task_fn
+        self.read_only = read_only
         # Populated by mutating file tools for UI colored diffs
         self.last_diffs: List[Tuple[str, str]] = []
 
@@ -199,6 +281,8 @@ class ToolRuntime:
 
     def run(self, name: str, arguments: dict[str, Any] | str) -> str:
         self.last_diffs = []
+        if self.read_only and name not in READ_ONLY_TOOL_NAMES:
+            return f"error: tool {name} disabled in read-only spawn_task"
         if isinstance(arguments, str):
             try:
                 arguments = json.loads(arguments) if arguments else {}
@@ -408,6 +492,27 @@ class ToolRuntime:
             except OSError:
                 continue
         return "\n".join(matches) or "(no matches)"
+
+    def tool_fetch_url(self, url: str, max_chars: int = 20_000) -> str:
+        if not self.enable_web:
+            return "error: web tools disabled (set enable_web=true or pass --web)"
+        from xp.web import fetch_url
+
+        return fetch_url(url, max_chars=int(max_chars))
+
+    def tool_web_search(self, query: str, max_results: int = 5) -> str:
+        if not self.enable_web:
+            return "error: web tools disabled (set enable_web=true or pass --web)"
+        from xp.web import web_search
+
+        return web_search(query, max_results=int(max_results))
+
+    def tool_spawn_task(self, goal: str, max_turns: int = 6) -> str:
+        if self.spawn_task_fn is None:
+            return "error: spawn_task not available"
+        if self.read_only:
+            return "error: nested spawn_task not allowed"
+        return self.spawn_task_fn(goal=goal, max_turns=int(max_turns))
 
 
 def _which(name: str) -> str | None:

@@ -87,9 +87,32 @@ def test_tool_loop_then_final(tmp_path: Path, monkeypatch):
     fake = _FakeCompletions(responses)
 
     agent = Agent(cfg, persist=False)
-    agent.client = _FakeClient(fake)  # type: ignore[assignment]
-    # silence output
     agent.on_event = lambda *_: None
+
+    # Patch backend path used by Agent
+    import xp.agent as agent_mod
+    import xp.backends as backends_mod
+
+    def fake_create(config, *, messages, tools, stream, emit):
+        resp = fake.create(messages=messages, tools=tools)
+        msg = resp.choices[0].message
+        tcs = []
+        if msg.tool_calls:
+            for tc in msg.tool_calls:
+                tcs.append(
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments or "{}",
+                        },
+                    }
+                )
+        return msg.content or "", tcs, resp.usage
+
+    monkeypatch.setattr(agent_mod, "create_with_retry", fake_create)
+    monkeypatch.setattr(backends_mod, "create_with_retry", fake_create)
 
     result = agent.run("run a command")
     assert "done" in result
