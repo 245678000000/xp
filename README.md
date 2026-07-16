@@ -7,7 +7,7 @@
 - **可以不装 Grok** — 配置 API Key 即可  
 - **也可以挂 Grok Build** — 同一套 skills / AGENTS.md 用 `install.sh` 装进 `~/.grok`
 
-当前版本 **0.7**：可选 **审计日志**、工具结果截断、**PyPI 发布就绪**（`xp-harness`）、贡献与发版文档。
+当前版本 **0.8**：**P3 余量** — 可选遥测（默认关）、轻量 TUI、`xp telemetry`、隐私说明。
 
 ---
 
@@ -31,7 +31,7 @@ python3 -m pip install -e ".[dev]"
 # 或: pip install -r requirements.txt && export PYTHONPATH=$PWD/src
 ```
 
-命令：`xp` 或 `python3 -m xp`。发版见 [docs/PUBLISH.md](docs/PUBLISH.md)。
+命令：`xp` 或 `python3 -m xp`。发版见 [docs/PUBLISH.md](docs/PUBLISH.md) · 隐私见 [docs/PRIVACY.md](docs/PRIVACY.md)。
 
 ### 2. 配置 API / 模型
 
@@ -67,6 +67,8 @@ model = "gpt-4o"
 | `XP_ALLOW_OUTSIDE=1` | 允许写 cwd 外 |
 | `XP_WEB=1` | 启用 web 工具 |
 | `XP_AUDIT=1` | 本地工具审计日志 |
+| `XP_TELEMETRY=1` | 可选匿名遥测（默认关） |
+| `XP_TUI=1` | chat 默认启用 TUI 输入 |
 | `XP_API_BACKEND` | `chat_completions` 或 `messages` |
 | `ANTHROPIC_API_KEY` | Anthropic（自动切 messages 后端） |
 | `XP_SESSIONS_DIR` | 会话存储目录 |
@@ -80,9 +82,11 @@ model = "gpt-4o"
 xp "这个仓库是干什么的？"
 xp -p "列出入口文件"            # -p 传 prompt
 xp chat
+xp chat --tui                   # 历史 + / 补全（需 prompt_toolkit）
 xp chat --continue              # 恢复最近会话
 xp chat --session <id>
 xp sessions                     # 列出会话
+xp telemetry status             # 遥测默认关
 
 xp /commit
 xp "帮我提交当前改动"           # 自动匹配 → /commit

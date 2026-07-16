@@ -59,6 +59,11 @@ class RuntimeConfig:
     enable_audit: bool = False
     # Truncate huge tool results before sending back to the model
     max_tool_result_chars: int = 60_000
+    # Opt-in telemetry (default OFF). Local JSONL; optional webhook endpoint.
+    enable_telemetry: bool = False
+    telemetry_endpoint: str = ""
+    # Prefer prompt_toolkit TUI for chat when available
+    enable_tui: bool = False
 
     def require_api_key(self) -> None:
         if not self.api_key:
@@ -133,6 +138,8 @@ def load_config(
             "enable_spawn",
             "enable_mcp",
             "enable_audit",
+            "enable_telemetry",
+            "enable_tui",
         ):
             if key in data:
                 setattr(cfg, key, bool(data[key]))
@@ -142,6 +149,8 @@ def load_config(
             cfg.skills_paths = [str(x) for x in data["skills_paths"]]
         if "api_backend" in data:
             cfg.api_backend = str(data["api_backend"])
+        if "telemetry_endpoint" in data:
+            cfg.telemetry_endpoint = str(data["telemetry_endpoint"])
         # Preserve raw mcp block for McpRegistry
         if "mcp_servers" in data:
             # normalize to list of dicts for RuntimeConfig
@@ -180,6 +189,12 @@ def load_config(
         cfg.enable_web = True
     if os.environ.get("XP_AUDIT") and _truthy(os.environ["XP_AUDIT"]):
         cfg.enable_audit = True
+    if os.environ.get("XP_TELEMETRY") and _truthy(os.environ["XP_TELEMETRY"]):
+        cfg.enable_telemetry = True
+    if env_te := _first_env("XP_TELEMETRY_ENDPOINT"):
+        cfg.telemetry_endpoint = env_te
+    if os.environ.get("XP_TUI") and _truthy(os.environ["XP_TUI"]):
+        cfg.enable_tui = True
 
     # Only XAI_API_KEY → default to xAI endpoint
     if (

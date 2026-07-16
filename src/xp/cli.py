@@ -54,6 +54,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Resume the latest session",
     )
     chat.add_argument("--session", default=None, help="Resume a specific session id")
+    chat.add_argument(
+        "--tui",
+        action="store_true",
+        help="Use prompt_toolkit input (history + /completions). pip install 'xp-harness[tui]'",
+    )
 
     skills = sub.add_parser("skills", help="List skills")
     skills.add_argument("--json", action="store_true")
@@ -73,6 +78,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     cfg_cmd = sub.add_parser("config", help="Show effective runtime config")
     cfg_cmd.add_argument("--json", action="store_true")
+
+    tel = sub.add_parser("telemetry", help="Opt-in telemetry status (default OFF)")
+    tel_sub = tel.add_subparsers(dest="telemetry_cmd")
+    tel_sub.add_parser("status", help="Show local telemetry summary (default)")
+    tel_sub.add_parser("clear", help="Delete local telemetry JSONL files")
+    tel_sub.add_parser("path", help="Print telemetry directory")
 
     return p
 
@@ -128,6 +139,7 @@ def main(argv: list[str] | None = None) -> None:
         "doctor",
         "init",
         "config",
+        "telemetry",
         "help",
     }
 
@@ -164,6 +176,9 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.cmd == "config":
         _cmd_config(console, as_json=getattr(args, "json", False))
+        return
+    if args.cmd == "telemetry":
+        _cmd_telemetry(console, getattr(args, "telemetry_cmd", None) or "status")
         return
     if args.cmd == "chat":
         _cmd_chat(console, args)
@@ -285,11 +300,25 @@ def _cmd_run(console: Console, args: argparse.Namespace, prompt: str) -> None:
 
 
 def _cmd_chat(console: Console, args: argparse.Namespace) -> None:
+    from pathlib import Path as _Path
+
+    from xp.tui import make_reader, tui_available
+
     cfg = _make_config(args)
     cfg.require_api_key()
     skill, how = _resolve_skill(args, cfg, None)
     if skill and how == "cli":
         console.print(f"[dim]skill → /{skill.name}[/]")
+
+    use_tui = bool(getattr(args, "tui", False) or cfg.enable_tui)
+    if use_tui and not tui_available():
+        console.print(
+            "[yellow]prompt_toolkit not installed — falling back to plain input.[/]\n"
+            "[dim]Install: pip install 'xp-harness[tui]'  or  pip install prompt_toolkit[/]"
+        )
+        use_tui = False
+    hist = str(_Path.home() / ".local" / "share" / "xp" / "history")
+    read_line = make_reader(tui=use_tui, history_path=hist if use_tui else None)
 
     messages = None
     session_id = getattr(args, "session", None)
@@ -316,19 +345,22 @@ def _cmd_chat(console: Console, args: argparse.Namespace) -> None:
         session_id=session_id,
         persist=True,
     )
+    tui_note = " · TUI" if use_tui else ""
+    tel_note = " · telemetry" if cfg.enable_telemetry else ""
     console.print(
         Panel(
-            f"[bold]xp[/] {__version__} · model [cyan]{cfg.model}[/] · [dim]{cfg.base_url}[/]\n"
+            f"[bold]xp[/] {__version__} · model [cyan]{cfg.model}[/] · [dim]{cfg.base_url}[/]{tui_note}{tel_note}\n"
             f"cwd [dim]{cfg.cwd}[/] · session [dim]{session_id}[/]\n"
             "Commands: [cyan]/skills[/] [cyan]/commit[/]… [cyan]/agent name[/] "
-            "[cyan]/quit[/]",
+            "[cyan]/quit[/]"
+            + (" · Tab completes /commands" if use_tui else ""),
             border_style="cyan",
         )
     )
     try:
         while True:
             try:
-                line = console.input("[bold green]you>[/] ").strip()
+                line = read_line("you> ").strip()
             except (EOFError, KeyboardInterrupt):
                 console.print(f"\nbye · session {session_id}")
                 break
@@ -420,8 +452,45 @@ def _cmd_chat(console: Console, args: argparse.Namespace) -> None:
                 console.print(Panel(Markdown(result), title="xp", border_style="cyan"))
             elif result and cfg.stream:
                 console.print()
+            # footer usage
+            u = agent.total_usage
+            if u.get("total_tokens") and not getattr(args, "quiet", False):
+                console.print(
+                    f"[dim]tokens Σ {u['total_tokens']}  "
+                    f"(p={u['prompt_tokens']} c={u['completion_tokens']})[/]"
+                )
     finally:
         agent.close()
+
+
+def _cmd_telemetry(console: Console, cmd: str) -> None:
+    from xp.telemetry import clear_local, summarize_local, telemetry_dir
+
+    if cmd == "path":
+        console.print(str(telemetry_dir()))
+        return
+    if cmd == "clear":
+        n = clear_local()
+        console.print(f"[green]cleared {n} telemetry file(s)[/] under {telemetry_dir()}")
+        return
+    # status
+    cfg = load_config()
+    summary = summarize_local()
+    console.print(Panel("[bold]xp telemetry[/] (default OFF)", border_style="cyan"))
+    console.print(f"enabled:     {cfg.enable_telemetry}")
+    console.print(f"endpoint:    {cfg.telemetry_endpoint or '(local only)'}")
+    console.print(f"dir:         {summary['dir']}")
+    console.print(f"install_id:  {summary.get('install_id') or '—'}")
+    console.print(f"sessions:    {len(summary.get('sessions') or [])}")
+    for s in (summary.get("sessions") or [])[:8]:
+        tools = s.get("tools") or {}
+        top = ", ".join(f"{k}:{v}" for k, v in sorted(tools.items(), key=lambda x: -x[1])[:5])
+        console.print(f"  · {s['id']}  events={s['events']}  {top}")
+    console.print()
+    console.print(
+        "[dim]Enable: enable_telemetry=true or XP_TELEMETRY=1. "
+        "Never sends prompts/secrets. Optional webhook: telemetry_endpoint.[/]"
+    )
 
 
 def _cmd_config(console: Console, *, as_json: bool) -> None:
@@ -442,6 +511,9 @@ def _cmd_config(console: Console, *, as_json: bool) -> None:
         "enable_spawn": cfg.enable_spawn,
         "enable_mcp": cfg.enable_mcp,
         "enable_audit": cfg.enable_audit,
+        "enable_telemetry": cfg.enable_telemetry,
+        "telemetry_endpoint": cfg.telemetry_endpoint or None,
+        "enable_tui": cfg.enable_tui,
         "mcp_servers": [s.get("name") for s in cfg.mcp_servers],
         "skills_paths": cfg.skills_paths,
         "max_turns": cfg.max_turns,
@@ -593,6 +665,9 @@ model = "gpt-4o"
 # enable_spawn = true     # spawn_task read-only sub-agents
 # enable_mcp = true
 # enable_audit = false    # local tool log under ~/.local/share/xp/audit/
+# enable_telemetry = false  # opt-in anonymous counters (local JSONL)
+# telemetry_endpoint = ""   # optional webhook; still no prompts/secrets
+# enable_tui = false        # prompt_toolkit chat (or: xp chat --tui)
 # max_tool_result_chars = 60000
 # api_backend = "chat_completions"  # or "messages" for Anthropic
 # skills_paths = ["~/my-skills"]

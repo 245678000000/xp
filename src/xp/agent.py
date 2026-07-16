@@ -18,6 +18,7 @@ from xp.mcp_client import McpRegistry, McpServerSpec
 from xp.prompts import build_system_prompt
 from xp.session import new_session_id, save_session
 from xp.skills import Skill
+from xp.telemetry import Telemetry
 from xp.tools import get_tool_defs, ToolRuntime
 
 OnEvent = Callable[[str, str], None]
@@ -55,6 +56,14 @@ class Agent:
             enabled=config.enable_audit,
             session_id=self.session_id,
         )
+        self.telemetry = Telemetry(
+            enabled=config.enable_telemetry,
+            endpoint=config.telemetry_endpoint,
+            session_id=self.session_id,
+            model=config.model,
+            backend=config.api_backend,
+            cwd=str(config.cwd),
+        )
         if config.enable_audit:
             self._emit(
                 "status",
@@ -66,6 +75,12 @@ class Agent:
                 base_url=config.base_url,
                 cwd=str(config.cwd),
             )
+        if config.enable_telemetry:
+            self._emit(
+                "status",
+                f"telemetry ON (local{'; + webhook' if config.telemetry_endpoint else ''}) → {self.telemetry.path}",
+            )
+            self.telemetry.session_start()
         if (
             self.mcp is None
             and config.enable_mcp
@@ -136,6 +151,10 @@ class Agent:
             ]
 
     def close(self) -> None:
+        try:
+            self.telemetry.session_end(self.total_usage)
+        except Exception:  # noqa: BLE001
+            pass
         if self._owns_mcp and self.mcp:
             self.mcp.close()
 
@@ -261,6 +280,7 @@ class Agent:
                 f"turn {turn + 1}/{self.config.max_turns} · {self.config.model}"
                 + (" · ro" if self.read_only else ""),
             )
+            self.telemetry.turn()
             content, tool_calls, usage = self._create_completion()
             self._accumulate_usage(usage)
 
@@ -314,6 +334,7 @@ class Agent:
                 elif name == "grep" and isinstance(args_obj, dict):
                     summary = f"grep: {args_obj.get('pattern', '')}"
                 self._emit("tool_call", summary)
+                self.telemetry.tool(name)
 
                 result = self.tools.run(name, args_raw)
                 self.audit.tool_call(name, args_raw, result)

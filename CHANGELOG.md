@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.0
+
+- **P3 telemetry** (default OFF): local anonymous counters; optional webhook; `xp telemetry`
+- **P3 light TUI**: `xp chat --tui` / `enable_tui` via optional `prompt_toolkit` (`pip install 'xp-harness[tui]'`)
+- Chat footer shows cumulative token usage
+- `docs/PRIVACY.md` privacy policy for audit + telemetry
+
 ## 0.7.0
 
 - Optional **local audit log** for tool calls (`enable_audit` / `XP_AUDIT=1`)

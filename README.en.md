@@ -7,7 +7,7 @@
 - **No Grok required** — set an API key and run  
 - **Optional Grok Build layer** — same skills via `./install.sh` → `~/.grok`
 
-**v0.7:** optional audit log, tool-result truncation, PyPI-ready packaging (`xp-harness`), publish docs.
+**v0.8:** P3 remainder — opt-in telemetry (default off), light TUI (`chat --tui`), privacy docs.
 
 ## Install
 
@@ -48,7 +48,8 @@ xp skills
 Tools: `bash`, files, `apply_patch`, `spawn_task`, optional web + **MCP** (`mcp__server__tool`).  
 Skills: commit, pr, fix, ship, review, test, refactor, release.  
 Anthropic streaming: `api_backend=messages` + `ANTHROPIC_API_KEY`.  
-See `examples/` and `xp config`.
+See `examples/`, `xp config`, `xp telemetry`, `docs/PRIVACY.md`.  
+TUI: `pip install 'xp-harness[tui]'` then `xp chat --tui`.
 
 ## Dev
 
