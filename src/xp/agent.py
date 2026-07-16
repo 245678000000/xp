@@ -10,6 +10,7 @@ from typing import Any, List, Optional
 from rich.console import Console
 from rich.markup import escape
 
+from xp.audit import AuditLog
 from xp.backends import create_with_retry
 from xp.config import RuntimeConfig
 from xp.diffutil import format_diff_for_terminal
@@ -50,6 +51,21 @@ class Agent:
         self.read_only = read_only
         self._owns_mcp = False
         self.mcp = mcp_registry
+        self.audit = AuditLog(
+            enabled=config.enable_audit,
+            session_id=self.session_id,
+        )
+        if config.enable_audit:
+            self._emit(
+                "status",
+                f"audit log → {self.audit.path}",
+            )
+            self.audit.write(
+                "session_start",
+                model=config.model,
+                base_url=config.base_url,
+                cwd=str(config.cwd),
+            )
         if (
             self.mcp is None
             and config.enable_mcp
@@ -300,6 +316,7 @@ class Agent:
                 self._emit("tool_call", summary)
 
                 result = self.tools.run(name, args_raw)
+                self.audit.tool_call(name, args_raw, result)
                 if self.tools.last_diffs:
                     for rel, diff in self.tools.last_diffs:
                         self._emit("status", f"diff {rel}")
@@ -308,11 +325,14 @@ class Agent:
                     self._emit("tool_result", first_line)
                 else:
                     self._emit("tool_result", result)
+                tool_content = _truncate_tool_result(
+                    result, self.config.max_tool_result_chars
+                )
                 self.messages.append(
                     {
                         "role": "tool",
                         "tool_call_id": tc["id"],
-                        "content": result,
+                        "content": tool_content,
                     }
                 )
             self._compact()
@@ -320,3 +340,16 @@ class Agent:
 
         self._persist()
         return final or f"(stopped after {self.config.max_turns} turns)"
+
+
+def _truncate_tool_result(text: str, max_chars: int) -> str:
+    max_chars = max(4000, int(max_chars))
+    if len(text) <= max_chars:
+        return text
+    head = max_chars * 2 // 3
+    tail = max_chars - head - 80
+    return (
+        text[:head]
+        + f"\n\n…[truncated {len(text) - max_chars} chars for model context]…\n\n"
+        + text[-tail:]
+    )

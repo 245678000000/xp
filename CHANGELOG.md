@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0
+
+- Optional **local audit log** for tool calls (`enable_audit` / `XP_AUDIT=1`)
+- Truncate oversized tool results before model context (`max_tool_result_chars`)
+- PyPI packaging polish: dynamic version from `__init__.py`, Trusted Publisher workflow
+- `docs/PUBLISH.md` + `CONTRIBUTING.md`
+- Doctor shows update install lines and MCP/audit flags
+
 ## 0.6.0
 
 - Anthropic Messages **SSE streaming** (text + tool_use)

@@ -55,6 +55,10 @@ class RuntimeConfig:
     # MCP server specs (parsed from config.toml)
     mcp_servers: List[Dict[str, Any]] = field(default_factory=list)
     enable_mcp: bool = True
+    # Local-only tool audit log (never uploaded)
+    enable_audit: bool = False
+    # Truncate huge tool results before sending back to the model
+    max_tool_result_chars: int = 60_000
 
     def require_api_key(self) -> None:
         if not self.api_key:
@@ -114,6 +118,7 @@ def load_config(
             ("timeout", float),
             ("max_messages", int),
             ("max_retries", int),
+            ("max_tool_result_chars", int),
         ):
             if key in data:
                 setattr(cfg, key, cast(data[key]))
@@ -127,6 +132,7 @@ def load_config(
             "enable_web",
             "enable_spawn",
             "enable_mcp",
+            "enable_audit",
         ):
             if key in data:
                 setattr(cfg, key, bool(data[key]))
@@ -172,6 +178,8 @@ def load_config(
         cfg.sandbox = False
     if os.environ.get("XP_WEB") and _truthy(os.environ["XP_WEB"]):
         cfg.enable_web = True
+    if os.environ.get("XP_AUDIT") and _truthy(os.environ["XP_AUDIT"]):
+        cfg.enable_audit = True
 
     # Only XAI_API_KEY → default to xAI endpoint
     if (

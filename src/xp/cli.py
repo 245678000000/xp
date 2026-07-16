@@ -441,10 +441,13 @@ def _cmd_config(console: Console, *, as_json: bool) -> None:
         "enable_web": cfg.enable_web,
         "enable_spawn": cfg.enable_spawn,
         "enable_mcp": cfg.enable_mcp,
+        "enable_audit": cfg.enable_audit,
         "mcp_servers": [s.get("name") for s in cfg.mcp_servers],
         "skills_paths": cfg.skills_paths,
         "max_turns": cfg.max_turns,
         "max_retries": cfg.max_retries,
+        "max_tool_result_chars": cfg.max_tool_result_chars,
+        "install": 'pip install -U "git+https://github.com/245678000000/xp.git"  # or: pip install -U xp-harness',
     }
     if as_json:
         print(json.dumps(data, indent=2, ensure_ascii=False))
@@ -518,16 +521,21 @@ def _cmd_doctor(console: Console, args: argparse.Namespace) -> None:
     console.print(f"model:       {cfg.model}")
     console.print(
         f"sandbox:     {cfg.sandbox}  yolo={cfg.yolo}  stream={cfg.stream}  "
-        f"web={cfg.enable_web}  spawn={cfg.enable_spawn}"
+        f"web={cfg.enable_web}  spawn={cfg.enable_spawn}  audit={cfg.enable_audit}"
     )
     console.print(f"api_backend: {cfg.api_backend}")
+    console.print(f"mcp:         enable={cfg.enable_mcp} servers={[s.get('name') for s in cfg.mcp_servers]}")
     amd = agents_md_path()
     console.print(f"AGENTS.md:   {amd} ({'ok' if amd.is_file() else 'missing'})")
     console.print(f"skills:      {skills_dir()} ({len(load_skills())} found)")
     console.print()
     console.print(
-        "[dim]Env: XP_API_KEY | OPENAI_API_KEY | XAI_API_KEY, XP_BASE_URL, XP_MODEL[/]"
+        "[dim]Env: XP_API_KEY | OPENAI_API_KEY | XAI_API_KEY | ANTHROPIC_API_KEY[/]"
     )
+    console.print(
+        "[dim]Update: pip install -U \"git+https://github.com/245678000000/xp.git\"[/]"
+    )
+    console.print("[dim]       or pip install -U xp-harness  (after PyPI publish)[/]")
     if not cfg.api_key:
         console.print(
             "\n[yellow]Tip:[/] run [cyan]xp init[/] then edit the config, or export XP_API_KEY."
@@ -584,6 +592,8 @@ model = "gpt-4o"
 # enable_web = false      # fetch_url + web_search (or XP_WEB=1 / --web)
 # enable_spawn = true     # spawn_task read-only sub-agents
 # enable_mcp = true
+# enable_audit = false    # local tool log under ~/.local/share/xp/audit/
+# max_tool_result_chars = 60000
 # api_backend = "chat_completions"  # or "messages" for Anthropic
 # skills_paths = ["~/my-skills"]
 

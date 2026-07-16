@@ -7,14 +7,17 @@
 - **No Grok required** — set an API key and run  
 - **Optional Grok Build layer** — same skills via `./install.sh` → `~/.grok`
 
-**v0.6:** Anthropic SSE streaming, MCP stdio bridge, `xp config`, examples, release workflow.
+**v0.7:** optional audit log, tool-result truncation, PyPI-ready packaging (`xp-harness`), publish docs.
 
 ## Install
 
 ```bash
 pip install "git+https://github.com/245678000000/xp.git"
+# after PyPI: pip install xp-harness
 # or: git clone … && pip install -e ".[dev]"
 ```
+
+Publish guide: [docs/PUBLISH.md](docs/PUBLISH.md).
 
 ## Configure
 

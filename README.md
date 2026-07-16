@@ -7,7 +7,7 @@
 - **可以不装 Grok** — 配置 API Key 即可  
 - **也可以挂 Grok Build** — 同一套 skills / AGENTS.md 用 `install.sh` 装进 `~/.grok`
 
-当前版本 **0.6**：**Anthropic 流式**、**MCP stdio**、`xp config`、示例配置与 release 工作流。
+当前版本 **0.7**：可选 **审计日志**、工具结果截断、**PyPI 发布就绪**（`xp-harness`）、贡献与发版文档。
 
 ---
 
@@ -21,6 +21,9 @@ Python **3.9+**。
 # 从 Git 安装（推荐）
 pip install "git+https://github.com/245678000000/xp.git"
 
+# PyPI（配置 Trusted Publisher 并打 tag 发版后）
+# pip install xp-harness
+
 # 或克隆开发
 git clone https://github.com/245678000000/xp.git
 cd xp
@@ -28,7 +31,7 @@ python3 -m pip install -e ".[dev]"
 # 或: pip install -r requirements.txt && export PYTHONPATH=$PWD/src
 ```
 
-命令：`xp` 或 `python3 -m xp`。
+命令：`xp` 或 `python3 -m xp`。发版见 [docs/PUBLISH.md](docs/PUBLISH.md)。
 
 ### 2. 配置 API / 模型
 
@@ -63,9 +66,11 @@ model = "gpt-4o"
 | `XP_NO_STREAM=1` | 关闭流式 |
 | `XP_ALLOW_OUTSIDE=1` | 允许写 cwd 外 |
 | `XP_WEB=1` | 启用 web 工具 |
+| `XP_AUDIT=1` | 本地工具审计日志 |
 | `XP_API_BACKEND` | `chat_completions` 或 `messages` |
 | `ANTHROPIC_API_KEY` | Anthropic（自动切 messages 后端） |
 | `XP_SESSIONS_DIR` | 会话存储目录 |
+| `XP_AUDIT_DIR` | 审计日志目录 |
 
 仅设 `XAI_API_KEY` 时自动使用 `https://api.x.ai/v1`。
 

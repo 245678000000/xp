@@ -4,16 +4,17 @@ build-backend = "hatchling.build"
 
 [project]
 name = "xp-harness"
-version = "0.6.0"
+dynamic = ["version"]
 description = "Standalone coding agent harness — skills, tools, OpenAI-compatible APIs (no Grok required)"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.9"
 authors = [{ name = "xp contributors" }]
-keywords = ["agent", "coding", "llm", "harness", "cli"]
+keywords = ["agent", "coding", "llm", "harness", "cli", "mcp"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Environment :: Console",
+  "Intended Audience :: Developers",
   "License :: OSI Approved :: Apache Software License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.9",
@@ -22,6 +23,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Topic :: Software Development",
+  "Topic :: Utilities",
 ]
 dependencies = [
   "openai>=1.40.0",
@@ -31,7 +33,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "build>=1.0"]
 
 [project.scripts]
 xp = "xp.cli:main"
@@ -39,14 +41,11 @@ xp = "xp.cli:main"
 [project.urls]
 Homepage = "https://github.com/245678000000/xp"
 Repository = "https://github.com/245678000000/xp"
+Issues = "https://github.com/245678000000/xp/issues"
+Changelog = "https://github.com/245678000000/xp/blob/main/CHANGELOG.md"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/xp"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"AGENTS.md" = "xp/data/AGENTS.md"
-"skills" = "xp/data/skills"
-"agents" = "xp/data/agents"
+[tool.hatch.version]
+path = "src/xp/__init__.py"
 
 [tool.hatch.build.targets.sdist]
 include = [
@@ -56,8 +55,22 @@ include = [
   "agents",
   "personas",
   "roles",
+  "examples",
+  "tests",
+  "scripts",
   "README.md",
   "README.en.md",
+  "CHANGELOG.md",
   "LICENSE",
   "install.sh",
+  "requirements.txt",
+  "pyproject.toml",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/xp"]
+# Harness content ships from src/xp/data/ (keep in sync via scripts/sync_data.sh)
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
