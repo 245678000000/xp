@@ -10,16 +10,18 @@ from pathlib import Path
 
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
 from xp import __version__
 from xp.agent import Agent
 from xp.config import load_config
+from xp.diffutil import format_diff_for_terminal
 from xp.paths import agents_md_path, skills_dir, user_config_path
 from xp.prompts import build_system_prompt
 from xp.session import latest_session_id, list_sessions, load_session, new_session_id
-from xp.skills import get_skill, load_skills
+from xp.skills import get_skill, load_skills, match_skill
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -34,6 +36,13 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="Run a one-shot task (default)")
     _add_common(run)
     run.add_argument("prompt", nargs="*", help="Task prompt")
+    run.add_argument(
+        "-p",
+        "--prompt-text",
+        dest="prompt_flag",
+        default=None,
+        help="Prompt text (alternative to positional args)",
+    )
     run.add_argument("--json", action="store_true", help="Machine-readable final result")
 
     chat = sub.add_parser("chat", help="Interactive multi-turn chat")
@@ -79,6 +88,11 @@ def _add_common(p: argparse.ArgumentParser) -> None:
         help="Allow file tools outside cwd",
     )
     p.add_argument("--no-stream", action="store_true", help="Disable streaming")
+    p.add_argument(
+        "--no-auto-skill",
+        action="store_true",
+        help="Disable automatic skill matching from the prompt",
+    )
     p.add_argument("-C", "--cwd", default=None, help="Working directory")
     p.add_argument("-q", "--quiet", action="store_true", help="Less tool logging")
 
@@ -133,10 +147,13 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.cmd == "run":
         prompt = " ".join(args.prompt).strip()
+        if getattr(args, "prompt_flag", None):
+            flag = args.prompt_flag.strip()
+            prompt = f"{prompt} {flag}".strip() if prompt else flag
         if not prompt and not sys.stdin.isatty():
             prompt = sys.stdin.read().strip()
         if not prompt:
-            parser.error("run requires a prompt (or pipe stdin)")
+            parser.error("run requires a prompt (or pipe stdin / -p)")
         _cmd_run(console, args, prompt)
         return
 
@@ -153,25 +170,30 @@ def _make_config(args: argparse.Namespace):
         yolo=True if getattr(args, "yolo", False) else None,
         stream=False if getattr(args, "no_stream", False) else None,
         allow_outside=True if getattr(args, "allow_outside", False) else None,
+        auto_skill=False if getattr(args, "no_auto_skill", False) else None,
         cwd=cwd,
     )
 
 
-def _resolve_skill(args: argparse.Namespace, cfg):
+def _resolve_skill(args: argparse.Namespace, cfg, prompt: str | None = None):
     name = getattr(args, "skill", None)
-    if not name:
-        return None
-    skill = get_skill(name, extra_paths=cfg.skills_paths)
-    if not skill:
-        raise SystemExit(f"Unknown skill: {name}. Try: xp skills")
-    return skill
+    if name:
+        skill = get_skill(name, extra_paths=cfg.skills_paths)
+        if not skill:
+            raise SystemExit(f"Unknown skill: {name}. Try: xp skills")
+        return skill, "cli"
+    if cfg.auto_skill and prompt:
+        hit = match_skill(prompt, extra_paths=cfg.skills_paths)
+        if hit:
+            return hit[0], f"auto:{hit[1]:.1f}"
+    return None, ""
 
 
 def _event_handler(console: Console, quiet: bool, as_json: bool = False):
     def on_event(kind: str, text: str) -> None:
         if as_json:
             return
-        if quiet and kind in ("tool_result", "status", "usage"):
+        if quiet and kind in ("tool_result", "status", "usage", "diff"):
             return
         if kind == "assistant":
             console.print(Panel(Markdown(text), title="xp", border_style="cyan"))
@@ -182,6 +204,16 @@ def _event_handler(console: Console, quiet: bool, as_json: bool = False):
         elif kind == "tool_result":
             preview = text if len(text) <= 800 else text[:800] + "\n…"
             console.print(f"[dim]{preview}[/]")
+        elif kind == "diff":
+            style_map = {
+                "green": "green",
+                "red": "red",
+                "cyan": "cyan",
+                "dim": "dim",
+                "bold": "bold",
+            }
+            for style, line in format_diff_for_terminal(text):
+                console.print(f"[{style_map.get(style, 'dim')}]{escape(line)}[/]")
         elif kind in ("status", "usage"):
             console.print(f"[dim]{text}[/]")
 
@@ -191,9 +223,11 @@ def _event_handler(console: Console, quiet: bool, as_json: bool = False):
 def _cmd_run(console: Console, args: argparse.Namespace, prompt: str) -> None:
     cfg = _make_config(args)
     cfg.require_api_key()
-    skill = _resolve_skill(args, cfg)
+    skill, how = _resolve_skill(args, cfg, prompt)
     as_json = getattr(args, "json", False)
     quiet = getattr(args, "quiet", False) or as_json
+    if skill and how.startswith("auto") and not quiet:
+        console.print(f"[dim]auto skill → /{skill.name} ({how})[/]")
 
     agent = Agent(
         cfg,
@@ -224,7 +258,9 @@ def _cmd_run(console: Console, args: argparse.Namespace, prompt: str) -> None:
 def _cmd_chat(console: Console, args: argparse.Namespace) -> None:
     cfg = _make_config(args)
     cfg.require_api_key()
-    skill = _resolve_skill(args, cfg)
+    skill, how = _resolve_skill(args, cfg, None)
+    if skill and how == "cli":
+        console.print(f"[dim]skill → /{skill.name}[/]")
 
     messages = None
     session_id = getattr(args, "session", None)
@@ -326,11 +362,26 @@ def _cmd_chat(console: Console, args: argparse.Namespace) -> None:
             }
             console.print(f"[dim]agent → {agent.agent_name}[/]")
             continue
+        # Auto-skill per message when not forced via CLI -s
+        if cfg.auto_skill and not getattr(args, "skill", None):
+            hit = match_skill(line, extra_paths=cfg.skills_paths)
+            if hit and (agent.skill is None or agent.skill.name != hit[0].name):
+                agent.skill = hit[0]
+                agent.messages[0] = {
+                    "role": "system",
+                    "content": build_system_prompt(
+                        skill=hit[0],
+                        agent=agent.agent_name,
+                        system_extra=cfg.system_extra,
+                        cwd=cfg.cwd,
+                    ),
+                }
+                console.print(f"[dim]auto skill → /{hit[0].name} ({hit[1]:.1f})[/]")
+
         result = agent.run(line)
         if result and not cfg.stream:
             console.print(Panel(Markdown(result), title="xp", border_style="cyan"))
         elif result and cfg.stream:
-            # already streamed; show separator
             console.print()
 
 
@@ -456,6 +507,7 @@ model = "gpt-4o"
 # yolo = false            # disables sandbox + confirms + blocklist
 # max_messages = 80
 # max_retries = 4
+# auto_skill = true       # match /commit /fix … from natural language
 # skills_paths = ["~/my-skills"]
 
 # xAI:

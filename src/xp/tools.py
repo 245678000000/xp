@@ -7,7 +7,10 @@ import os
 import re
 import subprocess
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Callable, List, Optional, Tuple
+
+from xp.diffutil import clip_diff, summarize_change, unified_diff
+from xp.patch import apply_patch_text
 
 # Hard block when not yolo
 _BLOCKED = re.compile(
@@ -109,6 +112,27 @@ TOOL_DEFS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "apply_patch",
+            "description": (
+                "Apply a multi-hunk patch. Prefer this over write_file for surgical edits. "
+                "Formats: (1) freeform *** Begin Patch / *** Update File: path / @@ hunks "
+                "with ' ' context, '-' remove, '+' add; (2) unified diff (--- / +++ / @@)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "patch": {
+                        "type": "string",
+                        "description": "Full patch text",
+                    },
+                },
+                "required": ["patch"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "list_dir",
             "description": "List files and directories under a path.",
             "parameters": {
@@ -154,6 +178,8 @@ class ToolRuntime:
         self.sandbox = sandbox and not yolo
         self.confirm_risky = confirm_risky and not yolo
         self.confirm_fn = confirm_fn
+        # Populated by mutating file tools for UI colored diffs
+        self.last_diffs: List[Tuple[str, str]] = []
 
     def resolve(self, path: str, *, write: bool = False) -> Path:
         p = Path(path).expanduser()
@@ -172,6 +198,7 @@ class ToolRuntime:
         return p
 
     def run(self, name: str, arguments: dict[str, Any] | str) -> str:
+        self.last_diffs = []
         if isinstance(arguments, str):
             try:
                 arguments = json.loads(arguments) if arguments else {}
@@ -188,6 +215,16 @@ class ToolRuntime:
             return f"error: {e}"
         except Exception as e:  # noqa: BLE001
             return f"error: {type(e).__name__}: {e}"
+
+    def _record_diff(self, rel_path: str, old: str, new: str) -> str:
+        diff = unified_diff(rel_path, old, new)
+        if diff:
+            self.last_diffs.append((rel_path, diff))
+        created = old == "" and new != ""
+        summary = summarize_change(rel_path, None if created else old, new)
+        if not diff:
+            return summary
+        return f"{summary}\n\n{clip_diff(diff)}"
 
     def tool_bash(self, command: str, timeout: int = 120) -> str:
         if not self.yolo and _BLOCKED.search(command):
@@ -253,9 +290,15 @@ class ToolRuntime:
 
     def tool_write_file(self, path: str, content: str) -> str:
         p = self.resolve(path, write=True)
+        old = p.read_text(encoding="utf-8") if p.is_file() else ""
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
-        return f"wrote {len(content)} bytes → {p}"
+        rel = path
+        try:
+            rel = str(p.relative_to(self.cwd))
+        except ValueError:
+            rel = str(p)
+        return self._record_diff(rel, old, content)
 
     def tool_str_replace(
         self,
@@ -279,7 +322,33 @@ class ToolRuntime:
             else text.replace(old_string, new_string, 1)
         )
         p.write_text(new_text, encoding="utf-8")
-        return f"updated {p} ({count if replace_all else 1} replacement(s))"
+        rel = path
+        try:
+            rel = str(p.relative_to(self.cwd))
+        except ValueError:
+            rel = str(p)
+        n = count if replace_all else 1
+        body = self._record_diff(rel, text, new_text)
+        return f"{n} replacement(s)\n{body}"
+
+    def tool_apply_patch(self, patch: str) -> str:
+        def _resolve(rel: str) -> Path:
+            return self.resolve(rel, write=True)
+
+        def _read(p: Path) -> str:
+            return p.read_text(encoding="utf-8") if p.is_file() else ""
+
+        def _write(p: Path, content: str) -> None:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content, encoding="utf-8")
+
+        result = apply_patch_text(patch, resolve=_resolve, read_text=_read, write_text=_write)
+        if not result.ok:
+            return result.message
+        parts = [result.message]
+        for rel, old, new in result.diffs:
+            parts.append(self._record_diff(rel, old, new))
+        return "\n\n".join(parts)
 
     def tool_list_dir(self, path: str = ".") -> str:
         p = self.resolve(path)

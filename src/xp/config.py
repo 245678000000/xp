@@ -44,6 +44,8 @@ class RuntimeConfig:
     system_extra: str = ""
     skills_paths: List[str] = field(default_factory=list)
     allow_outside: bool = False
+    # Auto-attach best matching skill from user message
+    auto_skill: bool = True
 
     def require_api_key(self) -> None:
         if not self.api_key:
@@ -81,6 +83,7 @@ def load_config(
     stream: bool | None = None,
     allow_outside: bool | None = None,
     sandbox: bool | None = None,
+    auto_skill: bool | None = None,
 ) -> RuntimeConfig:
     cfg = RuntimeConfig(cwd=(cwd or Path.cwd()).resolve())
 
@@ -99,7 +102,14 @@ def load_config(
         ):
             if key in data:
                 setattr(cfg, key, cast(data[key]))
-        for key in ("yolo", "sandbox", "confirm_risky", "stream", "allow_outside"):
+        for key in (
+            "yolo",
+            "sandbox",
+            "confirm_risky",
+            "stream",
+            "allow_outside",
+            "auto_skill",
+        ):
             if key in data:
                 setattr(cfg, key, bool(data[key]))
         if "system_extra" in data:
@@ -152,6 +162,8 @@ def load_config(
             cfg.sandbox = False
     if sandbox is not None:
         cfg.sandbox = sandbox
+    if auto_skill is not None:
+        cfg.auto_skill = auto_skill
 
     if cfg.yolo:
         cfg.confirm_risky = False

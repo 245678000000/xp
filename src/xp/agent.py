@@ -15,6 +15,7 @@ from xp.config import RuntimeConfig
 from xp.prompts import build_system_prompt
 from xp.session import new_session_id, save_session
 from xp.skills import Skill
+from xp.diffutil import format_diff_for_terminal
 from xp.tools import TOOL_DEFS, ToolRuntime
 
 OnEvent = Callable[[str, str], None]
@@ -91,10 +92,23 @@ class Agent:
         elif kind == "tool_result":
             preview = text if len(text) <= 1200 else text[:1200] + "\n…[truncated]"
             self.console.print(f"[dim]{escape(preview)}[/]")
+        elif kind == "diff":
+            self._print_diff(text)
         elif kind == "status":
             self.console.print(f"[dim]{escape(text)}[/]")
         elif kind == "usage":
             self.console.print(f"[dim]{escape(text)}[/]")
+
+    def _print_diff(self, diff_text: str) -> None:
+        style_map = {
+            "green": "green",
+            "red": "red",
+            "cyan": "cyan",
+            "dim": "dim",
+            "bold": "bold",
+        }
+        for style, line in format_diff_for_terminal(diff_text):
+            self.console.print(f"[{style_map.get(style, 'dim')}]{escape(line)}[/]")
 
     def _persist(self) -> None:
         if self.persist and self.session_id:
@@ -280,17 +294,30 @@ class Agent:
                     args_obj, dict
                 ):
                     summary = f"{name}: {args_obj.get('path', '')}"
+                elif name == "apply_patch":
+                    summary = "apply_patch"
                 elif name == "grep" and isinstance(args_obj, dict):
                     summary = f"grep: {args_obj.get('pattern', '')}"
                 self._emit("tool_call", summary)
 
                 result = self.tools.run(name, args_raw)
-                self._emit("tool_result", result)
+                # Colored diff preview for mutating tools
+                if self.tools.last_diffs:
+                    for rel, diff in self.tools.last_diffs:
+                        self._emit("status", f"diff {rel}")
+                        self._emit("diff", diff)
+                    # Keep tool message compact for the model
+                    first_line = result.split("\n\n", 1)[0]
+                    self._emit("tool_result", first_line)
+                    tool_content = result
+                else:
+                    self._emit("tool_result", result)
+                    tool_content = result
                 self.messages.append(
                     {
                         "role": "tool",
                         "tool_call_id": tc["id"],
-                        "content": result,
+                        "content": tool_content,
                     }
                 )
             self._compact()

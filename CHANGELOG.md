@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0
+
+- `apply_patch` tool (freeform *** Patch and unified diffs)
+- Colored unified-diff previews on write / str_replace / apply_patch
+- Auto skill matching from natural language (`auto_skill`, `--no-auto-skill`)
+- `-p` / `--prompt-text` for run prompts
+- Chat per-message auto skill attach
+
 ## 0.3.0
 
 - Streaming assistant output (`stream`, `--no-stream`)

@@ -114,3 +114,95 @@ def skills_catalog(
     for s in items:
         lines.append(f"- /{s.name}: {s.description}")
     return "\n".join(lines)
+
+
+_TOKEN_RE = re.compile(r"[a-z0-9_\u4e00-\u9fff]{2,}", re.I)
+
+# Extra trigger phrases beyond description text
+_ALIASES: dict[str, tuple[str, ...]] = {
+    "commit": ("commit", "提交", "git commit", "conventional commit", "save to git"),
+    "pr": ("pull request", "开 pr", "创建 pr", "github pr", "合并请求"),
+    "fix": ("bug", "fix", "修复", "stack trace", "报错", "failure", "crash", "flaky"),
+    "ship": ("ship", "交付", "implement and commit", "做完并提交", "end-to-end"),
+}
+
+
+def _tokens(text: str) -> set[str]:
+    return {t.lower() for t in _TOKEN_RE.findall(text.lower())}
+
+
+def score_skill(query: str, skill: Skill) -> float:
+    """Heuristic relevance score (higher = better)."""
+    q = query.strip().lower()
+    if not q:
+        return 0.0
+    score = 0.0
+    name = skill.name.lower()
+    # Explicit /name or bare name as a word
+    if re.search(rf"(^|[^\w])/{re.escape(name)}([^\w]|$)", q):
+        score += 10
+    if re.search(rf"(^|[^\w]){re.escape(name)}([^\w]|$)", q):
+        score += 6
+    for phrase in _ALIASES.get(name, ()):
+        if phrase.lower() in q:
+            score += 5
+    q_toks = _tokens(q)
+    d_toks = _tokens(skill.description + " " + skill.name)
+    # Drop ultra-common words
+    stop = {
+        "the",
+        "and",
+        "for",
+        "with",
+        "from",
+        "this",
+        "that",
+        "when",
+        "user",
+        "wants",
+        "use",
+        "says",
+        "or",
+        "a",
+        "to",
+        "of",
+        "in",
+        "on",
+    }
+    q_toks -= stop
+    d_toks -= stop
+    if not q_toks or not d_toks:
+        return score
+    overlap = q_toks & d_toks
+    score += 1.5 * len(overlap)
+    # Prefer denser overlap relative to query
+    score += 2.0 * (len(overlap) / max(1, len(q_toks)))
+    return score
+
+
+def match_skill(
+    query: str,
+    *,
+    extra_paths: Sequence[str] | None = None,
+    min_score: float = 4.0,
+    skills: list[Skill] | None = None,
+) -> Optional[tuple[Skill, float]]:
+    """
+    Pick the best skill for a user message, or None if confidence is low.
+    Returns (skill, score).
+    """
+    items = skills if skills is not None else load_skills(extra_paths=extra_paths)
+    if not items:
+        return None
+    ranked = sorted(
+        ((s, score_skill(query, s)) for s in items),
+        key=lambda x: x[1],
+        reverse=True,
+    )
+    best, best_score = ranked[0]
+    if best_score < min_score:
+        return None
+    # Require clear winner when two skills are close
+    if len(ranked) > 1 and best_score - ranked[1][1] < 1.0 and best_score < min_score + 3:
+        return None
+    return best, best_score

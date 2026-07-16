@@ -7,7 +7,7 @@
 - **No Grok required** — set an API key and run  
 - **Optional Grok Build layer** — same skills via `./install.sh` → `~/.grok`
 
-**v0.3:** streaming, session resume, path sandbox, API retries, pytest + CI.
+**v0.4:** streaming, sessions, sandbox, retries, **colored diffs**, **apply_patch**, **auto skill match**.
 
 ## Install
 
@@ -31,17 +31,19 @@ Env: `XP_API_KEY` / `OPENAI_API_KEY` / `XAI_API_KEY`, `XP_BASE_URL`, `XP_MODEL`,
 
 ```bash
 xp "What is this repo?"
-xp chat
+xp -p "list entrypoints"
 xp chat --continue
 xp sessions
 xp /commit
+xp "please commit my changes"   # auto → /commit
 xp /fix "…"
 xp run --json "list 3 files"
+xp run --no-auto-skill "…"
 xp skills
 ```
 
-Tools: `bash`, `read_file`, `write_file`, `str_replace`, `list_dir`, `grep`.  
-Default sandbox: file tools stay under cwd; risky bash asks for confirm.
+Tools: `bash`, `read_file`, `write_file`, `str_replace`, **`apply_patch`**, `list_dir`, `grep`.  
+Mutating file tools print a **colored unified diff**. Default sandbox: cwd-only.
 
 ## Dev
 

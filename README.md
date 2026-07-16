@@ -7,7 +7,7 @@
 - **可以不装 Grok** — 配置 API Key 即可  
 - **也可以挂 Grok Build** — 同一套 skills / AGENTS.md 用 `install.sh` 装进 `~/.grok`
 
-当前版本 **0.3**：流式输出、会话恢复、路径沙箱、API 重试、pytest + CI。
+当前版本 **0.4**：流式 / 会话 / 沙箱 / 重试，以及 **彩色 diff**、**apply_patch**、**skill 自动匹配**。
 
 ---
 
@@ -70,14 +70,17 @@ model = "gpt-4o"
 
 ```bash
 xp "这个仓库是干什么的？"
+xp -p "列出入口文件"            # -p 传 prompt
 xp chat
 xp chat --continue              # 恢复最近会话
 xp chat --session <id>
 xp sessions                     # 列出会话
 
 xp /commit
+xp "帮我提交当前改动"           # 自动匹配 → /commit
 xp /fix "测试失败 …"
 xp run --skill ship "实现登录"
+xp run --no-auto-skill "…"      # 关闭自动 skill
 xp run --json "列出 3 个文件"    # 机器可读
 
 xp -m gpt-4o --no-stream "…"
@@ -85,7 +88,8 @@ xp --yolo "…"                   # 危险模式
 xp skills
 ```
 
-**内置工具：** `bash` · `read_file` · `write_file` · `str_replace` · `list_dir` · `grep`
+**内置工具：** `bash` · `read_file` · `write_file` · `str_replace` · **`apply_patch`** · `list_dir` · `grep`  
+写文件时会打印 **彩色 unified diff** 预览。
 
 **安全默认：**
 
