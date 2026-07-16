@@ -6,6 +6,7 @@ import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import List
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -29,10 +30,20 @@ class RuntimeConfig:
     temperature: float = 0.2
     timeout: float = 120.0
     cwd: Path = field(default_factory=Path.cwd)
-    # When False, refuse a small set of clearly destructive bash patterns
+    # When True: skip blocklist + path sandbox + confirm prompts
     yolo: bool = False
-    # Extra system text
+    # Restrict file tools to cwd tree
+    sandbox: bool = True
+    # Ask before risky bash (rm, push, sudo, ...)
+    confirm_risky: bool = True
+    # Stream assistant tokens
+    stream: bool = True
+    # Keep last N non-system messages after compaction (approx)
+    max_messages: int = 80
+    max_retries: int = 4
     system_extra: str = ""
+    skills_paths: List[str] = field(default_factory=list)
+    allow_outside: bool = False
 
     def require_api_key(self) -> None:
         if not self.api_key:
@@ -43,13 +54,7 @@ class RuntimeConfig:
                 "  export OPENAI_API_KEY=...\n"
                 "  export XAI_API_KEY=...         # for api.x.ai\n"
                 "Or write api_key in ~/.config/xp/config.toml\n\n"
-                "Example config:\n"
-                "  mkdir -p ~/.config/xp\n"
-                "  cat > ~/.config/xp/config.toml <<'EOF'\n"
-                "  api_key = \"sk-...\"\n"
-                "  base_url = \"https://api.openai.com/v1\"\n"
-                "  model = \"gpt-4o\"\n"
-                "  EOF\n"
+                "  xp init\n"
             )
 
 
@@ -61,6 +66,10 @@ def _first_env(*names: str) -> str:
     return ""
 
 
+def _truthy(val: str) -> bool:
+    return val.lower() in ("1", "true", "yes", "on")
+
+
 def load_config(
     *,
     model: str | None = None,
@@ -69,6 +78,9 @@ def load_config(
     max_turns: int | None = None,
     yolo: bool | None = None,
     cwd: Path | None = None,
+    stream: bool | None = None,
+    allow_outside: bool | None = None,
+    sandbox: bool | None = None,
 ) -> RuntimeConfig:
     cfg = RuntimeConfig(cwd=(cwd or Path.cwd()).resolve())
 
@@ -78,18 +90,23 @@ def load_config(
         cfg.api_key = str(data.get("api_key") or data.get("apiKey") or "")
         cfg.base_url = str(data.get("base_url") or data.get("baseUrl") or cfg.base_url)
         cfg.model = str(data.get("model") or cfg.model)
-        if "max_turns" in data:
-            cfg.max_turns = int(data["max_turns"])
-        if "temperature" in data:
-            cfg.temperature = float(data["temperature"])
-        if "timeout" in data:
-            cfg.timeout = float(data["timeout"])
-        if "yolo" in data:
-            cfg.yolo = bool(data["yolo"])
+        for key, cast in (
+            ("max_turns", int),
+            ("temperature", float),
+            ("timeout", float),
+            ("max_messages", int),
+            ("max_retries", int),
+        ):
+            if key in data:
+                setattr(cfg, key, cast(data[key]))
+        for key in ("yolo", "sandbox", "confirm_risky", "stream", "allow_outside"):
+            if key in data:
+                setattr(cfg, key, bool(data[key]))
         if "system_extra" in data:
             cfg.system_extra = str(data["system_extra"])
+        if "skills_paths" in data and isinstance(data["skills_paths"], list):
+            cfg.skills_paths = [str(x) for x in data["skills_paths"]]
 
-    # Env overrides file
     env_key = _first_env("XP_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY")
     if env_key:
         cfg.api_key = env_key
@@ -97,10 +114,15 @@ def load_config(
         cfg.base_url = env_url
     if env_model := _first_env("XP_MODEL", "OPENAI_MODEL"):
         cfg.model = env_model
-    if os.environ.get("XP_YOLO", "").lower() in ("1", "true", "yes"):
+    if os.environ.get("XP_YOLO") and _truthy(os.environ["XP_YOLO"]):
         cfg.yolo = True
+    if os.environ.get("XP_NO_STREAM") and _truthy(os.environ["XP_NO_STREAM"]):
+        cfg.stream = False
+    if os.environ.get("XP_ALLOW_OUTSIDE") and _truthy(os.environ["XP_ALLOW_OUTSIDE"]):
+        cfg.allow_outside = True
+        cfg.sandbox = False
 
-    # If only XAI_API_KEY is set and base_url still default OpenAI, point at xAI
+    # Only XAI_API_KEY → default to xAI endpoint
     if (
         not _first_env("XP_BASE_URL", "OPENAI_BASE_URL")
         and cfg.base_url.rstrip("/") == "https://api.openai.com/v1"
@@ -112,7 +134,6 @@ def load_config(
         if cfg.model == "gpt-4o-mini":
             cfg.model = "grok-3-mini"
 
-    # CLI flags win
     if api_key:
         cfg.api_key = api_key
     if base_url:
@@ -123,6 +144,18 @@ def load_config(
         cfg.max_turns = max_turns
     if yolo is not None:
         cfg.yolo = yolo
+    if stream is not None:
+        cfg.stream = stream
+    if allow_outside is not None:
+        cfg.allow_outside = allow_outside
+        if allow_outside:
+            cfg.sandbox = False
+    if sandbox is not None:
+        cfg.sandbox = sandbox
+
+    if cfg.yolo:
+        cfg.confirm_risky = False
+        cfg.sandbox = False
 
     cfg.base_url = cfg.base_url.rstrip("/")
     return cfg

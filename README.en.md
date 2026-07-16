@@ -2,82 +2,51 @@
 
 [中文](README.md) | **English**
 
-**xp** is a **standalone** coding agent harness: tool loop, skills, global rules, and any **OpenAI-compatible** API.
+**xp** is a **standalone** coding agent harness: tool loop, skills, global rules, OpenAI-compatible APIs.
 
-- **No Grok required** — install with pip, set an API key, run  
-- **Optional Grok Build layer** — same skills / `AGENTS.md` can still be installed into `~/.grok`
+- **No Grok required** — set an API key and run  
+- **Optional Grok Build layer** — same skills via `./install.sh` → `~/.grok`
 
-Inspired by [xai-org/grok-build](https://github.com/xai-org/grok-build), with a self-contained Python CLI runtime.
+**v0.3:** streaming, session resume, path sandbox, API retries, pytest + CI.
 
----
-
-## Quick start (standalone)
-
-### 1. Install
-
-Python **3.9+**.
+## Install
 
 ```bash
-git clone https://github.com/245678000000/xp.git
-cd xp
-python3 -m pip install -e .
-# or: pip install -r requirements.txt && export PYTHONPATH=$PWD/src
+pip install "git+https://github.com/245678000000/xp.git"
+# or: git clone … && pip install -e ".[dev]"
 ```
 
-### 2. Configure API & model
+## Configure
 
 ```bash
 xp init
-# edit ~/.config/xp/config.toml
-```
-
-```toml
-api_key = "sk-..."
-base_url = "https://api.openai.com/v1"
-model = "gpt-4o"
-```
-
-Env vars: `XP_API_KEY` / `OPENAI_API_KEY` / `XAI_API_KEY`, `XP_BASE_URL`, `XP_MODEL`.
-
-```bash
+export XP_API_KEY=sk-...
+# edit ~/.config/xp/config.toml  (model, base_url, sandbox, …)
 xp doctor
 ```
 
-### 3. Run
+Env: `XP_API_KEY` / `OPENAI_API_KEY` / `XAI_API_KEY`, `XP_BASE_URL`, `XP_MODEL`, `XP_YOLO`, `XP_NO_STREAM`, `XP_ALLOW_OUTSIDE`.
+
+## Usage
 
 ```bash
 xp "What is this repo?"
 xp chat
+xp chat --continue
+xp sessions
 xp /commit
-xp /fix "failing test ..."
-xp -m gpt-4o "..."
+xp /fix "…"
+xp run --json "list 3 files"
 xp skills
 ```
 
-Tools: `bash`, `read_file`, `write_file`, `str_replace`, `list_dir`, `grep`.
+Tools: `bash`, `read_file`, `write_file`, `str_replace`, `list_dir`, `grep`.  
+Default sandbox: file tools stay under cwd; risky bash asks for confirm.
 
----
-
-## Optional: Grok Build
+## Dev
 
 ```bash
-./install.sh        # or ./install.sh --link
-```
-
-| Mode | Command | Needs |
-|------|---------|--------|
-| Standalone | `xp "..."` | Python + API key |
-| Grok layer | `grok` | [Grok Build](https://x.ai/cli) |
-
----
-
-## Layout
-
-```text
-src/xp/     # Python runtime (CLI + tool loop)
-skills/     # /commit /pr /fix /ship
-AGENTS.md   # global rules
-install.sh  # install into ~/.grok
+bash scripts/sync_data.sh && pytest -q
 ```
 
 ## License

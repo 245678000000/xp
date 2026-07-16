@@ -7,12 +7,12 @@ import os
 import re
 import subprocess
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
-# Coarse safety net when yolo=False
+# Hard block when not yolo
 _BLOCKED = re.compile(
     r"""(?ix)
-    \brm\s+(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r)\b.*(/|~)
+    \brm\s+(-[a-z]*r[a-z]*f|-[a-z]*f[a-z]*r)\b.*(/|~|\*)
     |\bmkfs\b
     |\bdd\s+if=
     |\b(shutdown|reboot|halt)\b
@@ -20,6 +20,22 @@ _BLOCKED = re.compile(
     |\bwget\b.*\|\s*(ba)?sh
     |\bgit\s+push\s+.*--force
     |\bgit\s+reset\s+--hard\b
+    """
+)
+
+# Needs interactive confirm when confirm_risky and not yolo
+_RISKY = re.compile(
+    r"""(?ix)
+    \brm\s+
+    |\bsudo\b
+    |\bgit\s+push\b
+    |\bgit\s+clean\b
+    |\bchmod\s+-R\b
+    |\bchown\s+-R\b
+    |\bkill\s+-9\b
+    |\bmkfs\b
+    |\bdd\s+
+    |\b>\s*/dev/
     """
 )
 
@@ -124,15 +140,36 @@ TOOL_DEFS: list[dict[str, Any]] = [
 
 
 class ToolRuntime:
-    def __init__(self, cwd: Path, *, yolo: bool = False) -> None:
+    def __init__(
+        self,
+        cwd: Path,
+        *,
+        yolo: bool = False,
+        sandbox: bool = True,
+        confirm_risky: bool = True,
+        confirm_fn: Optional[Callable[[str], bool]] = None,
+    ) -> None:
         self.cwd = cwd.resolve()
         self.yolo = yolo
+        self.sandbox = sandbox and not yolo
+        self.confirm_risky = confirm_risky and not yolo
+        self.confirm_fn = confirm_fn
 
-    def resolve(self, path: str) -> Path:
+    def resolve(self, path: str, *, write: bool = False) -> Path:
         p = Path(path).expanduser()
         if not p.is_absolute():
             p = self.cwd / p
-        return p.resolve()
+        p = p.resolve()
+        if self.sandbox:
+            try:
+                p.relative_to(self.cwd)
+            except ValueError:
+                kind = "write" if write else "access"
+                raise PermissionError(
+                    f"sandbox: refusing {kind} outside workspace ({self.cwd}): {p}. "
+                    "Pass --allow-outside or set sandbox=false / yolo=true."
+                )
+        return p
 
     def run(self, name: str, arguments: dict[str, Any] | str) -> str:
         if isinstance(arguments, str):
@@ -147,7 +184,9 @@ class ToolRuntime:
             return handler(**arguments)
         except TypeError as e:
             return f"error: bad arguments for {name}: {e}"
-        except Exception as e:  # noqa: BLE001 — surface tool errors to the model
+        except PermissionError as e:
+            return f"error: {e}"
+        except Exception as e:  # noqa: BLE001
             return f"error: {type(e).__name__}: {e}"
 
     def tool_bash(self, command: str, timeout: int = 120) -> str:
@@ -156,6 +195,15 @@ class ToolRuntime:
                 "error: command blocked by safety policy. "
                 "Re-run with --yolo if you really need it (destructive)."
             )
+        if self.confirm_risky and _RISKY.search(command):
+            ok = False
+            if self.confirm_fn is not None:
+                ok = self.confirm_fn(f"Risky bash: {command}\nAllow?")
+            if not ok:
+                return (
+                    "error: risky command not confirmed by user "
+                    "(rm/sudo/git push/…). Use --yolo to skip confirms."
+                )
         try:
             proc = subprocess.run(
                 command,
@@ -204,7 +252,7 @@ class ToolRuntime:
         return "\n".join(f"{i + start:>5}|{line}" for i, line in enumerate(chunk)) or "(empty)"
 
     def tool_write_file(self, path: str, content: str) -> str:
-        p = self.resolve(path)
+        p = self.resolve(path, write=True)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
         return f"wrote {len(content)} bytes → {p}"
@@ -216,7 +264,7 @@ class ToolRuntime:
         new_string: str,
         replace_all: bool = False,
     ) -> str:
-        p = self.resolve(path)
+        p = self.resolve(path, write=True)
         if not p.is_file():
             return f"error: not a file: {p}"
         text = p.read_text(encoding="utf-8")
@@ -225,7 +273,11 @@ class ToolRuntime:
             return "error: old_string not found"
         if count > 1 and not replace_all:
             return f"error: old_string found {count} times; set replace_all=true or make it unique"
-        new_text = text.replace(old_string, new_string) if replace_all else text.replace(old_string, new_string, 1)
+        new_text = (
+            text.replace(old_string, new_string)
+            if replace_all
+            else text.replace(old_string, new_string, 1)
+        )
         p.write_text(new_text, encoding="utf-8")
         return f"updated {p} ({count if replace_all else 1} replacement(s))"
 
@@ -251,7 +303,6 @@ class ToolRuntime:
     ) -> str:
         p = self.resolve(path)
         max_matches = max(1, min(int(max_matches), 200))
-        # Prefer ripgrep
         if _which("rg"):
             cmd = ["rg", "-n", "--no-heading", "-m", str(max_matches), pattern]
             if glob:

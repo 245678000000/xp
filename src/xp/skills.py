@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterable, List, Optional, Sequence
 
 from xp.paths import skills_dir
 
@@ -48,11 +49,10 @@ def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
     return meta, body.strip()
 
 
-def load_skills(directory: Path | None = None) -> list[Skill]:
-    root = directory or skills_dir()
+def _load_from_dir(root: Path) -> List[Skill]:
     if not root.is_dir():
         return []
-    skills: list[Skill] = []
+    skills: List[Skill] = []
     for skill_md in sorted(root.glob("*/SKILL.md")):
         text = skill_md.read_text(encoding="utf-8")
         meta, body = _parse_frontmatter(text)
@@ -63,16 +63,51 @@ def load_skills(directory: Path | None = None) -> list[Skill]:
     return skills
 
 
-def get_skill(name: str, directory: Path | None = None) -> Skill | None:
+def skill_search_dirs(extra: Sequence[str] | None = None) -> List[Path]:
+    """Ordered dirs: extras first (higher priority), then bundled skills_dir."""
+    dirs: List[Path] = []
+    seen = set()
+    for raw in list(extra or []) + [str(skills_dir())]:
+        p = Path(raw).expanduser().resolve()
+        key = str(p)
+        if key in seen:
+            continue
+        seen.add(key)
+        dirs.append(p)
+    return dirs
+
+
+def load_skills(
+    directory: Path | None = None,
+    extra_paths: Sequence[str] | None = None,
+) -> list[Skill]:
+    if directory is not None:
+        return _load_from_dir(directory)
+    by_name: dict[str, Skill] = {}
+    # later dirs are lower priority — load low priority first, then override
+    for d in reversed(skill_search_dirs(extra_paths)):
+        for s in _load_from_dir(d):
+            by_name[s.name.lower()] = s
+    return sorted(by_name.values(), key=lambda s: s.name)
+
+
+def get_skill(
+    name: str,
+    directory: Path | None = None,
+    extra_paths: Sequence[str] | None = None,
+) -> Skill | None:
     name = name.lstrip("/").lower()
-    for s in load_skills(directory):
+    for s in load_skills(directory, extra_paths=extra_paths):
         if s.name.lower() == name:
             return s
     return None
 
 
-def skills_catalog(skills: list[Skill] | None = None) -> str:
-    items = skills if skills is not None else load_skills()
+def skills_catalog(
+    skills: list[Skill] | None = None,
+    extra_paths: Sequence[str] | None = None,
+) -> str:
+    items = skills if skills is not None else load_skills(extra_paths=extra_paths)
     if not items:
         return "(no skills installed)"
     lines = ["Available skills (invoke by name when relevant):"]
