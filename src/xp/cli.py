@@ -71,6 +71,9 @@ def build_parser() -> argparse.ArgumentParser:
     init = sub.add_parser("init", help="Write a sample ~/.config/xp/config.toml")
     init.add_argument("--force", action="store_true", help="Overwrite existing config")
 
+    cfg_cmd = sub.add_parser("config", help="Show effective runtime config")
+    cfg_cmd.add_argument("--json", action="store_true")
+
     return p
 
 
@@ -124,6 +127,7 @@ def main(argv: list[str] | None = None) -> None:
         "sessions",
         "doctor",
         "init",
+        "config",
         "help",
     }
 
@@ -157,6 +161,9 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.cmd == "init":
         _cmd_init(console, force=args.force)
+        return
+    if args.cmd == "config":
+        _cmd_config(console, as_json=getattr(args, "json", False))
         return
     if args.cmd == "chat":
         _cmd_chat(console, args)
@@ -256,22 +263,25 @@ def _cmd_run(console: Console, args: argparse.Namespace, prompt: str) -> None:
         on_event=_event_handler(console, quiet, as_json=as_json),
         persist=False,
     )
-    result = agent.run(prompt)
-    if as_json:
-        print(
-            json.dumps(
-                {
-                    "result": result,
-                    "usage": agent.total_usage,
-                    "model": cfg.model,
-                },
-                ensure_ascii=False,
+    try:
+        result = agent.run(prompt)
+        if as_json:
+            print(
+                json.dumps(
+                    {
+                        "result": result,
+                        "usage": agent.total_usage,
+                        "model": cfg.model,
+                    },
+                    ensure_ascii=False,
+                )
             )
-        )
-        return
-    if result:
-        console.print()
-        console.print(Panel(Markdown(result), title="result", border_style="green"))
+            return
+        if result:
+            console.print()
+            console.print(Panel(Markdown(result), title="result", border_style="green"))
+    finally:
+        agent.close()
 
 
 def _cmd_chat(console: Console, args: argparse.Namespace) -> None:
@@ -315,28 +325,50 @@ def _cmd_chat(console: Console, args: argparse.Namespace) -> None:
             border_style="cyan",
         )
     )
-    while True:
-        try:
-            line = console.input("[bold green]you>[/] ").strip()
-        except (EOFError, KeyboardInterrupt):
-            console.print(f"\nbye · session {session_id}")
-            break
-        if not line:
-            continue
-        if line in ("/quit", "/exit", ":q"):
-            console.print(f"bye · session {session_id}")
-            break
-        if line in ("/skills", "/skill"):
-            for s in load_skills(extra_paths=cfg.skills_paths):
-                console.print(f"  [cyan]/{s.name}[/] — {s.description}")
-            continue
-        # /commit style shortcuts
-        if line.startswith("/") and not line.startswith("/skill ") and not line.startswith("/agent "):
-            parts = line[1:].split(maxsplit=1)
-            sk_name = parts[0]
-            rest = parts[1] if len(parts) > 1 else f"Execute the /{sk_name} skill."
-            sk = get_skill(sk_name, extra_paths=cfg.skills_paths)
-            if sk:
+    try:
+        while True:
+            try:
+                line = console.input("[bold green]you>[/] ").strip()
+            except (EOFError, KeyboardInterrupt):
+                console.print(f"\nbye · session {session_id}")
+                break
+            if not line:
+                continue
+            if line in ("/quit", "/exit", ":q"):
+                console.print(f"bye · session {session_id}")
+                break
+            if line in ("/skills", "/skill"):
+                for s in load_skills(extra_paths=cfg.skills_paths):
+                    console.print(f"  [cyan]/{s.name}[/] — {s.description}")
+                continue
+            if line.startswith("/") and not line.startswith("/skill ") and not line.startswith(
+                "/agent "
+            ):
+                parts = line[1:].split(maxsplit=1)
+                sk_name = parts[0]
+                rest = parts[1] if len(parts) > 1 else f"Execute the /{sk_name} skill."
+                sk = get_skill(sk_name, extra_paths=cfg.skills_paths)
+                if sk:
+                    agent.skill = sk
+                    agent.messages[0] = {
+                        "role": "system",
+                        "content": build_system_prompt(
+                            skill=sk,
+                            agent=agent.agent_name,
+                            system_extra=cfg.system_extra,
+                            cwd=cfg.cwd,
+                            enable_web=cfg.enable_web,
+                            enable_spawn=cfg.enable_spawn,
+                        ),
+                    }
+                    console.print(f"[dim]skill → /{sk.name}[/]")
+                    line = rest
+            if line.startswith("/skill "):
+                name = line.split(maxsplit=1)[1].strip()
+                sk = get_skill(name, extra_paths=cfg.skills_paths)
+                if not sk:
+                    console.print(f"[red]unknown skill {name}[/]")
+                    continue
                 agent.skill = sk
                 agent.messages[0] = {
                     "role": "system",
@@ -345,63 +377,81 @@ def _cmd_chat(console: Console, args: argparse.Namespace) -> None:
                         agent=agent.agent_name,
                         system_extra=cfg.system_extra,
                         cwd=cfg.cwd,
+                        enable_web=cfg.enable_web,
+                        enable_spawn=cfg.enable_spawn,
                     ),
                 }
                 console.print(f"[dim]skill → /{sk.name}[/]")
-                line = rest
-            # else fall through as normal message
-        if line.startswith("/skill "):
-            name = line.split(maxsplit=1)[1].strip()
-            sk = get_skill(name, extra_paths=cfg.skills_paths)
-            if not sk:
-                console.print(f"[red]unknown skill {name}[/]")
                 continue
-            agent.skill = sk
-            agent.messages[0] = {
-                "role": "system",
-                "content": build_system_prompt(
-                    skill=sk,
-                    agent=agent.agent_name,
-                    system_extra=cfg.system_extra,
-                    cwd=cfg.cwd,
-                ),
-            }
-            console.print(f"[dim]skill → /{sk.name}[/]")
-            continue
-        if line.startswith("/agent "):
-            agent.agent_name = line.split(maxsplit=1)[1].strip()
-            agent.messages[0] = {
-                "role": "system",
-                "content": build_system_prompt(
-                    skill=agent.skill,
-                    agent=agent.agent_name,
-                    system_extra=cfg.system_extra,
-                    cwd=cfg.cwd,
-                ),
-            }
-            console.print(f"[dim]agent → {agent.agent_name}[/]")
-            continue
-        # Auto-skill per message when not forced via CLI -s
-        if cfg.auto_skill and not getattr(args, "skill", None):
-            hit = match_skill(line, extra_paths=cfg.skills_paths)
-            if hit and (agent.skill is None or agent.skill.name != hit[0].name):
-                agent.skill = hit[0]
+            if line.startswith("/agent "):
+                agent.agent_name = line.split(maxsplit=1)[1].strip()
                 agent.messages[0] = {
                     "role": "system",
                     "content": build_system_prompt(
-                        skill=hit[0],
+                        skill=agent.skill,
                         agent=agent.agent_name,
                         system_extra=cfg.system_extra,
                         cwd=cfg.cwd,
+                        enable_web=cfg.enable_web,
+                        enable_spawn=cfg.enable_spawn,
                     ),
                 }
-                console.print(f"[dim]auto skill → /{hit[0].name} ({hit[1]:.1f})[/]")
+                console.print(f"[dim]agent → {agent.agent_name}[/]")
+                continue
+            if cfg.auto_skill and not getattr(args, "skill", None):
+                hit = match_skill(line, extra_paths=cfg.skills_paths)
+                if hit and (agent.skill is None or agent.skill.name != hit[0].name):
+                    agent.skill = hit[0]
+                    agent.messages[0] = {
+                        "role": "system",
+                        "content": build_system_prompt(
+                            skill=hit[0],
+                            agent=agent.agent_name,
+                            system_extra=cfg.system_extra,
+                            cwd=cfg.cwd,
+                            enable_web=cfg.enable_web,
+                            enable_spawn=cfg.enable_spawn,
+                        ),
+                    }
+                    console.print(f"[dim]auto skill → /{hit[0].name} ({hit[1]:.1f})[/]")
 
-        result = agent.run(line)
-        if result and not cfg.stream:
-            console.print(Panel(Markdown(result), title="xp", border_style="cyan"))
-        elif result and cfg.stream:
-            console.print()
+            result = agent.run(line)
+            if result and not cfg.stream:
+                console.print(Panel(Markdown(result), title="xp", border_style="cyan"))
+            elif result and cfg.stream:
+                console.print()
+    finally:
+        agent.close()
+
+
+def _cmd_config(console: Console, *, as_json: bool) -> None:
+    cfg = load_config()
+    data = {
+        "version": __version__,
+        "config_file": str(user_config_path()),
+        "model": cfg.model,
+        "base_url": cfg.base_url,
+        "api_backend": cfg.api_backend,
+        "api_key_set": bool(cfg.api_key),
+        "cwd": str(cfg.cwd),
+        "sandbox": cfg.sandbox,
+        "yolo": cfg.yolo,
+        "stream": cfg.stream,
+        "auto_skill": cfg.auto_skill,
+        "enable_web": cfg.enable_web,
+        "enable_spawn": cfg.enable_spawn,
+        "enable_mcp": cfg.enable_mcp,
+        "mcp_servers": [s.get("name") for s in cfg.mcp_servers],
+        "skills_paths": cfg.skills_paths,
+        "max_turns": cfg.max_turns,
+        "max_retries": cfg.max_retries,
+    }
+    if as_json:
+        print(json.dumps(data, indent=2, ensure_ascii=False))
+        return
+    console.print(Panel("[bold]xp config[/]", border_style="cyan"))
+    for k, v in data.items():
+        console.print(f"{k:16} {v}")
 
 
 def _cmd_skills(console: Console, as_json: bool) -> None:
@@ -533,6 +583,7 @@ model = "gpt-4o"
 # auto_skill = true       # match /commit /fix … from natural language
 # enable_web = false      # fetch_url + web_search (or XP_WEB=1 / --web)
 # enable_spawn = true     # spawn_task read-only sub-agents
+# enable_mcp = true
 # api_backend = "chat_completions"  # or "messages" for Anthropic
 # skills_paths = ["~/my-skills"]
 
@@ -541,11 +592,17 @@ model = "gpt-4o"
 # model = "grok-3-mini"
 # (set XAI_API_KEY)
 
-# Anthropic:
+# Anthropic (streaming supported):
 # api_backend = "messages"
 # base_url = "https://api.anthropic.com"
 # model = "claude-sonnet-4-20250514"
 # (set ANTHROPIC_API_KEY)
+
+# MCP servers (stdio JSON-RPC):
+# [[mcp_servers]]
+# name = "filesystem"
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
 
 # OpenAI-compatible proxy:
 # base_url = "https://your-proxy.example/v1"

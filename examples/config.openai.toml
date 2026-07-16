@@ -1,0 +1,11 @@
+# Example: OpenAI
+# cp examples/config.openai.toml ~/.config/xp/config.toml
+
+base_url = "https://api.openai.com/v1"
+model = "gpt-4o"
+# Prefer: export XP_API_KEY=sk-...
+stream = true
+sandbox = true
+auto_skill = true
+enable_web = false
+enable_spawn = true

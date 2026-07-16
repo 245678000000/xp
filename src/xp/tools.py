@@ -251,6 +251,7 @@ class ToolRuntime:
         enable_web: bool = False,
         spawn_task_fn: Optional[Callable[..., str]] = None,
         read_only: bool = False,
+        mcp_call: Optional[Callable[..., str]] = None,
     ) -> None:
         self.cwd = cwd.resolve()
         self.yolo = yolo
@@ -260,6 +261,7 @@ class ToolRuntime:
         self.enable_web = enable_web
         self.spawn_task_fn = spawn_task_fn
         self.read_only = read_only
+        self.mcp_call = mcp_call
         # Populated by mutating file tools for UI colored diffs
         self.last_diffs: List[Tuple[str, str]] = []
 
@@ -288,6 +290,12 @@ class ToolRuntime:
                 arguments = json.loads(arguments) if arguments else {}
             except json.JSONDecodeError:
                 return f"error: invalid JSON arguments: {arguments[:200]}"
+        # MCP tools: mcp__server__toolname
+        if name.startswith("mcp__") and self.mcp_call is not None:
+            try:
+                return self.mcp_call(name, arguments)
+            except Exception as e:  # noqa: BLE001
+                return f"error: MCP {type(e).__name__}: {e}"
         handler: Callable[..., str] | None = getattr(self, f"tool_{name}", None)
         if handler is None:
             return f"error: unknown tool {name}"

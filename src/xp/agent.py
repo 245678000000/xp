@@ -13,6 +13,7 @@ from rich.markup import escape
 from xp.backends import create_with_retry
 from xp.config import RuntimeConfig
 from xp.diffutil import format_diff_for_terminal
+from xp.mcp_client import McpRegistry, McpServerSpec
 from xp.prompts import build_system_prompt
 from xp.session import new_session_id, save_session
 from xp.skills import Skill
@@ -36,6 +37,7 @@ class Agent:
         confirm_fn: Optional[Callable[[str], bool]] = None,
         read_only: bool = False,
         allow_spawn: bool = True,
+        mcp_registry: Optional[McpRegistry] = None,
     ) -> None:
         self.config = config
         self.skill = skill
@@ -46,11 +48,38 @@ class Agent:
         self.session_id = session_id or (new_session_id() if persist else None)
         self.total_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         self.read_only = read_only
+        self._owns_mcp = False
+        self.mcp = mcp_registry
+        if (
+            self.mcp is None
+            and config.enable_mcp
+            and config.mcp_servers
+            and not read_only
+        ):
+            self.mcp = McpRegistry()
+            specs = [
+                McpServerSpec(
+                    name=s["name"],
+                    command=s["command"],
+                    args=list(s.get("args") or []),
+                    env=dict(s.get("env") or {}),
+                )
+                for s in config.mcp_servers
+            ]
+            errors = self.mcp.connect(specs)
+            self._owns_mcp = True
+            for err in errors:
+                self._emit("status", f"MCP connect failed: {err}")
+            if self.mcp.tools:
+                self._emit("status", f"MCP tools loaded: {len(self.mcp.tools)}")
+
         self.tool_defs = get_tool_defs(
             enable_web=config.enable_web,
             enable_spawn=config.enable_spawn and allow_spawn and not read_only,
             read_only=read_only,
         )
+        if self.mcp and not read_only:
+            self.tool_defs = self.tool_defs + self.mcp.tool_defs()
 
         def _default_confirm(prompt: str) -> bool:
             try:
@@ -68,10 +97,12 @@ class Agent:
             enable_web=config.enable_web,
             read_only=read_only,
             spawn_task_fn=None if read_only or not allow_spawn else self._spawn_task,
+            mcp_call=self.mcp.call if self.mcp else None,
         )
         if messages is not None:
             self.messages = messages
         else:
+            mcp_names = [t.name for t in (self.mcp.tools if self.mcp else [])]
             self.messages = [
                 {
                     "role": "system",
@@ -83,9 +114,14 @@ class Agent:
                         enable_web=config.enable_web,
                         enable_spawn=config.enable_spawn and allow_spawn and not read_only,
                         read_only=read_only,
+                        mcp_tools=mcp_names,
                     ),
                 }
             ]
+
+    def close(self) -> None:
+        if self._owns_mcp and self.mcp:
+            self.mcp.close()
 
     def _spawn_task(self, goal: str, max_turns: int = 6) -> str:
         self._emit("status", f"spawn_task: {goal[:120]}")

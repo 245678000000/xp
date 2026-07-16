@@ -37,6 +37,7 @@ def build_system_prompt(
     enable_web: bool = False,
     enable_spawn: bool = True,
     read_only: bool = False,
+    mcp_tools: list[str] | None = None,
 ) -> str:
     parts: list[str] = []
 
@@ -55,6 +56,8 @@ def build_system_prompt(
             tools.append("spawn_task")
     if enable_web:
         tools.extend(["fetch_url", "web_search"])
+    if mcp_tools:
+        tools.extend(mcp_tools[:40])
 
     parts.append(
         "You are **xp**, a terminal coding agent with tools: "
@@ -66,6 +69,11 @@ def build_system_prompt(
             "You are in **read-only** mode — do not modify files.\n"
             if read_only
             else "Use spawn_task for short read-only sub-investigations.\n"
+        )
+        + (
+            "MCP tools are named mcp__<server>__<tool>; use them when relevant.\n"
+            if mcp_tools
+            else ""
         )
         + "When the task is done, give a concise final answer without more tool calls."
     )

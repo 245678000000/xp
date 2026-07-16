@@ -7,7 +7,7 @@
 - **可以不装 Grok** — 配置 API Key 即可  
 - **也可以挂 Grok Build** — 同一套 skills / AGENTS.md 用 `install.sh` 装进 `~/.grok`
 
-当前版本 **0.5**：**web 工具**、**spawn_task**、**Anthropic 后端**、更多 skills，以及 0.4 的 diff / 自动 skill / 会话能力。
+当前版本 **0.6**：**Anthropic 流式**、**MCP stdio**、`xp config`、示例配置与 release 工作流。
 
 ---
 
@@ -134,17 +134,38 @@ xp skills
 
 chat 里可直接输入 `/commit`、`/skills`。自然语言也会 **自动匹配** skill。
 
-### Anthropic
+### Anthropic（支持 SSE 流式）
 
 ```toml
 api_backend = "messages"
 base_url = "https://api.anthropic.com"
 model = "claude-sonnet-4-20250514"
+stream = true
 ```
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 xp -m claude-sonnet-4-20250514 --api-backend messages "…"
+```
+
+### MCP（stdio）
+
+在 `~/.config/xp/config.toml`：
+
+```toml
+enable_mcp = true
+
+[[mcp_servers]]
+name = "filesystem"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "."]
+```
+
+工具名形式：`mcp__filesystem__…`。示例见 `examples/config.mcp.toml`。
+
+```bash
+xp config          # 查看生效配置
+xp config --json
 ```
 
 ---

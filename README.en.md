@@ -7,7 +7,7 @@
 - **No Grok required** — set an API key and run  
 - **Optional Grok Build layer** — same skills via `./install.sh` → `~/.grok`
 
-**v0.5:** web tools, spawn_task, Anthropic backend, more skills (+ v0.4 features).
+**v0.6:** Anthropic SSE streaming, MCP stdio bridge, `xp config`, examples, release workflow.
 
 ## Install
 
@@ -42,9 +42,10 @@ xp run --no-auto-skill "…"
 xp skills
 ```
 
-Tools: `bash`, files, **`apply_patch`**, **`spawn_task`**, optional **`fetch_url`/`web_search`** (`--web`).  
+Tools: `bash`, files, `apply_patch`, `spawn_task`, optional web + **MCP** (`mcp__server__tool`).  
 Skills: commit, pr, fix, ship, review, test, refactor, release.  
-Anthropic: `api_backend=messages` + `ANTHROPIC_API_KEY`.
+Anthropic streaming: `api_backend=messages` + `ANTHROPIC_API_KEY`.  
+See `examples/` and `xp config`.
 
 ## Dev
 

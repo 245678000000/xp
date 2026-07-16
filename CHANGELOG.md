@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0
+
+- Anthropic Messages **SSE streaming** (text + tool_use)
+- Optional **MCP stdio** bridge (`[[mcp_servers]]` in config)
+- `xp config` shows effective runtime settings
+- `examples/` sample configs (OpenAI / Anthropic / MCP)
+- GitHub Actions release workflow on `v*` tags
+
 ## 0.5.0
 
 - Optional web tools: `fetch_url`, `web_search` (`enable_web` / `--web` / `XP_WEB=1`)

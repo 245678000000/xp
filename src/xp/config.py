@@ -6,7 +6,7 @@ import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -52,6 +52,9 @@ class RuntimeConfig:
     enable_spawn: bool = True
     # chat_completions (OpenAI) | messages (Anthropic)
     api_backend: str = "chat_completions"
+    # MCP server specs (parsed from config.toml)
+    mcp_servers: List[Dict[str, Any]] = field(default_factory=list)
+    enable_mcp: bool = True
 
     def require_api_key(self) -> None:
         if not self.api_key:
@@ -98,8 +101,10 @@ def load_config(
     cfg = RuntimeConfig(cwd=(cwd or Path.cwd()).resolve())
 
     path = user_config_path()
+    file_data: Dict[str, Any] = {}
     if path.is_file():
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
+        file_data = tomllib.loads(path.read_text(encoding="utf-8"))
+        data = file_data
         cfg.api_key = str(data.get("api_key") or data.get("apiKey") or "")
         cfg.base_url = str(data.get("base_url") or data.get("baseUrl") or cfg.base_url)
         cfg.model = str(data.get("model") or cfg.model)
@@ -121,6 +126,7 @@ def load_config(
             "auto_skill",
             "enable_web",
             "enable_spawn",
+            "enable_mcp",
         ):
             if key in data:
                 setattr(cfg, key, bool(data[key]))
@@ -130,6 +136,21 @@ def load_config(
             cfg.skills_paths = [str(x) for x in data["skills_paths"]]
         if "api_backend" in data:
             cfg.api_backend = str(data["api_backend"])
+        # Preserve raw mcp block for McpRegistry
+        if "mcp_servers" in data:
+            # normalize to list of dicts for RuntimeConfig
+            from xp.mcp_client import parse_mcp_config
+
+            specs = parse_mcp_config(data)
+            cfg.mcp_servers = [
+                {
+                    "name": s.name,
+                    "command": s.command,
+                    "args": s.args,
+                    "env": s.env,
+                }
+                for s in specs
+            ]
 
     env_key = _first_env(
         "XP_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY", "ANTHROPIC_API_KEY"

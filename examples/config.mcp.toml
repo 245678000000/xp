@@ -1,0 +1,11 @@
+# Example: OpenAI + one MCP filesystem server
+# Requires: Node.js + npx
+
+base_url = "https://api.openai.com/v1"
+model = "gpt-4o"
+enable_mcp = true
+
+[[mcp_servers]]
+name = "filesystem"
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-filesystem", "."]
